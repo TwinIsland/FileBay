@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simple Dial Pad</title>
+<link href="https://cdn.jsdelivr.net/npm/@mdi/font@6.5.95/css/materialdesignicons.min.css" rel="stylesheet" />
+
+<style>
+  .dial-pad {
+    width: 300px;
+    margin: auto;
+    text-align: center;
+  }
+  .dial-button {
+    display: inline-block;
+    margin: 10px;
+    width: 60px;
+    height: 60px;
+    line-height: 60px;
+    border-radius: 50%;
+    background-color: #f0f0f0;
+    cursor: pointer;
+  }
+  .dial-button:active {
+    background-color: #ddd;
+  }
+  .icon {
+    font-size: 24px;
+    color: #333;
+    line-height: 60px;
+  }
+</style>
+</head>
+<body>
+
+<div class="dial-pad">
+  <div class="dial-button"><i class="mdi mdi-numeric-1-box-outline icon"></i></div>
+  <div class="dial-button"><i class="mdi mdi-numeric-2-box-outline icon"></i></div>
+  <div class="dial-button"><i class="mdi mdi-numeric-3-box-outline icon"></i></div>
+  <div class="dial-button"><i class="mdi mdi-numeric-4-box-outline icon"></i></div>
+  <div class="dial-button"><i class="mdi mdi-numeric-5-box-outline icon"></i></div>
+  <div class="dial-button"><i class="mdi mdi-numeric-6-box-outline icon"></i></div>
+  <div class="dial-button"><i class="mdi mdi-numeric-7-box-outline icon"></i></div>
+  <div class="dial-button"><i class="mdi mdi-numeric-8-box-outline icon"></i></div>
+  <div class="dial-button"><i class="mdi mdi-numeric-9-box-outline icon"></i></div>
+
+  <div class="dial-button"><i class="mdi mdi-arrow-up-bold-box-outline icon"></i></div>
+  <div class="dial-button"><i class="mdi mdi-numeric-0-box-outline icon"></i></div>
+  <div class="dial-button"><i class="mdi mdi-check-box-outline icon"></i></div>
+</div>
+
+</body>
+</html>

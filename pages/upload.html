@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>File Upload</title>
+    <link rel="stylesheet" href="path_to/materialdesignicons.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="upload-container">
+        <form action="/upload" method="post" enctype="multipart/form-data" id="uploadForm">
+            <label for="fileUpload" class="file-upload-label mdi mdi-upload">
+                <input type="file" name="file" id="fileUpload" accept=".zip" hidden>
+                Click to upload a file
+            </label>
+            <input type="submit" value="Upload" class="upload-button">
+        </form>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
