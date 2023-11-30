@@ -14,3 +14,4 @@
 # compiled and executable
 server
 *.o
+test.html
