@@ -1,3 +1,27 @@
+/*
+    declare the reload function below
+*/
+function upload_reload() {
+    fetch('/config')
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            document.getElementById('file_max_size').textContent += (data.file_max_byte / 1048576).toFixed(2) + ' MB';;
+            document.getElementById('file_expire_in').textContent += (data.file_expire / 60) + ' Hours';
+        })
+        .catch(error => {
+            // Handle any errors
+            console.error('There has been a problem with your fetch operation:', error);
+        });
+}
+
+/*
+    single page app utils
+*/
 const route = (event) => {
     event = event || window.event;
     event.preventDefault();
@@ -17,6 +41,10 @@ const handleLocation = async () => {
     const route = routes[path] || routes[404];
     const html = await fetch(route).then((data) => data.text());
     document.getElementById("main-page").innerHTML = html;
+
+    if (path == '/upload') {
+        upload_reload()
+    }
 };
 
 window.onpopstate = handleLocation;

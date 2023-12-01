@@ -411,6 +411,23 @@ static enum MHD_Result upload_req_handler(struct MHD_Connection *connection, con
     }
 }
 
+
+/*
+* Response with string, be aware that parameter 'content' should always be on stack
+* Returns: MHD_Result
+*
+*/
+static enum MHD_Result response_str(struct MHD_Connection *connection, char *router_name, char *content)
+{
+    printf("GET: /%s\n", router_name);
+    struct MHD_Response *response = MHD_create_response_from_buffer(strlen(content), (void *)content, MHD_RESPMEM_MUST_COPY);
+    if (response == NULL)
+        return MHD_NO;
+    int ret = MHD_queue_response(connection, MHD_HTTP_OK, response);
+    MHD_destroy_response(response);
+    return ret;
+}
+
 /*
  * Main entry for handling the web request
  * Returns: MHD_Result
@@ -436,6 +453,7 @@ static enum MHD_Result ahc_echo(void *cls,
             1. response root index.html
             2. make css, js, pages folder as static
             3. server all files in storage_dir
+            4. /max_size: return the max file size limit
         */
 
         if (!*con_cls)
@@ -452,6 +470,12 @@ static enum MHD_Result ahc_echo(void *cls,
         else if (strncmp(url, "/css", 4) == 0 || strncmp(url, "/js", 3) == 0 || strncmp(url, "/pages", 6) == 0)
         {
             snprintf(file_path, sizeof(file_path), ".%s", url);
+        }
+        else if (strcmp(url, "/config") == 0)
+        {
+            char config[128];
+            sprintf(config, "{\"file_max_byte\": %ld, \"file_expire\": %ld}", file_max_byte, file_expire);
+            return response_str(connection, "config", config);
         }
         else
         {
