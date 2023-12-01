@@ -3,9 +3,12 @@
 # FileBay 🥳
 Update file in a quick way 
 
++ Super Light⚡: executable size <30kb
++ Super Fast⚡: powered by [libmicrohttpd](https://www.gnu.org/software/libmicrohttpd/)
+
 ![demo](/doc/demo.png)
 
-## Dependencies
+## Dependencies 🏗️
 
 - **libmicrohttpd**: Used for HTTP server functionality. [GNU LGPL v2.1](https://www.gnu.org/software/libmicrohttpd/).
 - **zlib**: For compression and decompression. [zlib License](https://zlib.net/zlib_license.html).
@@ -18,7 +21,7 @@ chmod +x INSTALL
 ./INSTALL
 ```
 
-## Run
+## Run 🐎
 ```bash
 # make the executable
 make
