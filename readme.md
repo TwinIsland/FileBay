@@ -1,8 +1,9 @@
 > developing
 > 
-# FileBay
+# FileBay 🥳
+Update file in a quick way 
 
-Update file in a quick way
+![demo](/doc/demo.png)
 
 ## Dependencies
 
@@ -11,13 +12,14 @@ Update file in a quick way
 
 Please ensure these are installed on your system for the software to function correctly. you may also install via the code below.
 
-
-## Run
 ```bash
 # install the dependency
 chmod +x INSTALL
 ./INSTALL
+```
 
+## Run
+```bash
 # make the executable
 make
 
