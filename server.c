@@ -304,7 +304,7 @@ static enum MHD_Result get_req_handler(struct MHD_Connection *connection, char *
 static enum MHD_Result iterate_post(void *coninfo_cls, enum MHD_ValueKind kind, const char *key,
                                     const char *filename, const char *content_type,
                                     const char *transfer_encoding, const char *data,
-                                    uint64_t off, size_t size) 
+                                    uint64_t off, size_t size)
 {
 
     struct ConnectionInfo *con_info = coninfo_cls;
@@ -428,7 +428,7 @@ static enum MHD_Result ahc_echo(void *cls,
     (void)version; /* Unused. Silent compiler warning. */
 
     // request handler
-    if (strcmp(method, "GET"))
+    if (strcmp(method, "GET") == 0)
     {
         /*
             Get request handler
@@ -436,6 +436,14 @@ static enum MHD_Result ahc_echo(void *cls,
             2. make css, js, pages folder as static
             3. server all files in storage_dir
         */
+
+        if (!*con_cls)
+        {
+            *con_cls = (void *)1;
+            return MHD_YES;
+        }
+        *con_cls = NULL;
+
         if (strcmp(url, "/") == 0 || strcmp(url, "/index.html") == 0)
         {
             strcpy(file_path, "./index.html");
@@ -453,7 +461,7 @@ static enum MHD_Result ahc_echo(void *cls,
 
         return get_req_handler(connection, file_path);
     }
-    else if (strcmp(method, "POST"))
+    else if (strcmp(method, "POST") == 0)
     {
         /*
             Post request handler
@@ -475,7 +483,6 @@ static enum MHD_Result ahc_echo(void *cls,
 
 int main(int argc, char *const *argv)
 {
-
     // signal handling
     signal(SIGINT, terminate_handler);
     signal(SIGTERM, terminate_handler);
@@ -486,18 +493,15 @@ int main(int argc, char *const *argv)
         return 1;
     }
 
+#ifdef debug
+    printf("!!! DEBUG MODE: to switch to the production mode, comment out the line '#define debug 1'\n\n");
+#endif
+
     // initialize global config parameter
     if (config_initialize() == 1)
     {
         fprintf(stderr, "config file load error\n");
         return 1;
-    }
-
-    // Create the worker thread
-    if (pthread_create(&tid, NULL, cleaner_worker, NULL) != 0)
-    {
-        fprintf(stderr, "Error creating thread\n");
-        return EXIT_FAILURE;
     }
 
     // start server
@@ -511,6 +515,17 @@ int main(int argc, char *const *argv)
         fprintf(stderr, "server start failed\n");
         return 1;
     }
+
+    printf("* Server started. Press enter to stop.\n\n");
+
+    // Create the worker thread
+    if (pthread_create(&tid, NULL, cleaner_worker, NULL) != 0)
+    {
+        fprintf(stderr, "Error creating thread\n");
+        return EXIT_FAILURE;
+    }
+
+    (void)getchar(); // Wait for user input to terminate the server
 
     terminate_handler(-1);
     return 0;
