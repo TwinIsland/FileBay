@@ -11,7 +11,6 @@
 // comment in out in product environment
 #define debug 1
 
-#define MAX_LINE_LENGTH 128
 #define CONFIG_NUM_EXPECT 4
 
 static int thread_should_stop = 0;
@@ -19,11 +18,23 @@ static pthread_t tid;
 static struct MHD_Daemon *d;
 static char *config_file = "CONFIG";
 
+// Config parameter
 static long file_max_byte, file_expire, worker_period_minute;
-static char storage_dir[MAX_LINE_LENGTH];
+static char storage_dir[128];
 
+struct ConnectionInfo
+{
+    FILE *fp;
+    size_t total_size;
+    struct MHD_PostProcessor *post_processor;
+};
 
-int config_loader()
+/*
+ * Initialize config parameter
+ * Returns: 1 if something goes wrong
+ *
+ */
+int config_initialize()
 {
     FILE *file = fopen(config_file, "r");
     if (file == NULL)
@@ -32,7 +43,7 @@ int config_loader()
         return 1;
     }
 
-    char line[MAX_LINE_LENGTH];
+    char line[128];
 
     size_t config_count = 0;
 
@@ -55,28 +66,33 @@ int config_loader()
             config_count++;
         }
     }
-
     fclose(file);
 
     if (config_count != CONFIG_NUM_EXPECT)
     {
-        perror("config insufficient\n");
+        perror("config load error");
         return 1;
     }
+
+    return 0;
 }
 
-void *worker_thread(void *arg)
+/*
+ * Worker to clean the expired or unknown files
+ * no heap use, kill it as you wish
+ *
+ */
+void *cleaner_worker(void *arg)
 {
     struct timespec ts;
 
-    
     while (!thread_should_stop)
     {
 
 #ifdef debug
-        printf("dispatching thread wake up\n");
+        printf("(DEBUG) cleaner worker wake up\n");
         sleep(1);
-        printf("dispatching thread sleep\n");
+        printf("(DEBUG) cleaner thread sleep\n");
         sleep(10);
         goto while_end;
 #endif
@@ -123,20 +139,28 @@ void *worker_thread(void *arg)
     return NULL;
 }
 
-// Signal handler function to handle SIGINT and SIGTERM
-void signal_handler(int signum)
-{   
+/*
+ * terminate handler for interupt signal and final cleanup
+ *
+ */
+void terminate_handler(int signum)
+{
     thread_should_stop = 1;
     pthread_cancel(tid);
-    printf("dispathcing thread end\n");
+    printf("cleaner thread end\n");
     MHD_stop_daemon(d);
     printf("server stoped\n");
     printf("bye\n");
     exit(0);
 }
 
-static enum MHD_Result
-can_compress(struct MHD_Connection *con)
+/*
+ * help function to check if the response body can be compressed or not
+ * Returns: MHD_Result enum
+ *
+ */
+
+static enum MHD_Result can_compress(struct MHD_Connection *con)
 {
     const char *ae;
     const char *de;
@@ -163,9 +187,13 @@ can_compress(struct MHD_Connection *con)
     return MHD_NO;
 }
 
-static enum MHD_Result
-body_compress(void **buf,
-              size_t *buf_size)
+/*
+ * compress the response body
+ * Returns: MHD_Result
+ *
+ */
+static enum MHD_Result body_compress(void **buf,
+                                     size_t *buf_size)
 {
     Bytef *cbuf;
     uLongf cbuf_size;
@@ -193,57 +221,19 @@ body_compress(void **buf,
     return MHD_YES;
 }
 
-static enum MHD_Result
-ahc_echo(void *cls,
-         struct MHD_Connection *connection,
-         const char *url,
-         const char *method,
-         const char *version,
-         const char *upload_data, size_t *upload_data_size, void **ptr)
+static enum MHD_Result get_req_handler(struct MHD_Connection *connection, char *file_path)
 {
     struct MHD_Response *response;
     enum MHD_Result ret;
     enum MHD_Result comp;
 
     FILE *file;
-    char *file_buf;
     long file_size;
-    char file_path[64];
+    char *file_buf;
 
-    (void)cls;              /* Unused. Silent compiler warning. */
-    (void)version;          /* Unused. Silent compiler warning. */
-    (void)upload_data;      /* Unused. Silent compiler warning. */
-    (void)upload_data_size; /* Unused. Silent compiler warning. */
+    printf("GET: %s\n", file_path);
 
-    if (0 != strcmp(method, "GET"))
-        return MHD_NO; /* unexpected method */
-    if (!*ptr)
-    {
-        *ptr = (void *)1;
-        return MHD_YES;
-    }
-    *ptr = NULL;
-
-    // fetch the request resources
-    if (strcmp(url, "/") == 0 || strcmp(url, "/index.html") == 0)
-    {
-        strcpy(file_path, "./index.html");
-    }
-    else
-    {
-        if (strncmp(url, "/css", 4) == 0 || strncmp(url, "/js", 3) == 0 || strncmp(url, "/pages", 6) == 0)
-        {
-            snprintf(file_path, sizeof(file_path), ".%s", url);
-        }
-        else
-        {
-            printf("request invalid url: %s\n", file_path);
-            strcpy(file_path, "./index.html");
-        }
-    }
-
-    printf("request resources: %s url: %s\n", file_path, url);
-
+    // load response content
     file = fopen(file_path, "rb");
     if (NULL == file)
     {
@@ -251,12 +241,12 @@ ahc_echo(void *cls,
         return MHD_NO;
     }
 
-    // Get file size
+    // get response size
     fseek(file, 0, SEEK_END);
     file_size = ftell(file);
     rewind(file);
 
-    // Allocate memory for file content
+    // put response content on heap
     file_buf = malloc(file_size);
     if (NULL == file_buf)
     {
@@ -271,9 +261,13 @@ ahc_echo(void *cls,
         return MHD_NO;
     }
 
-    fclose(file); // Close the file
+    fclose(file);
 
-    /* try to compress the body */
+    /*
+        try to compress the body,
+        the following code comes from sample,
+        do not modifying!
+    */
     comp = MHD_NO;
     if (MHD_YES ==
         can_compress(connection))
@@ -307,10 +301,184 @@ ahc_echo(void *cls,
     return ret;
 }
 
+static enum MHD_Result iterate_post(void *coninfo_cls, enum MHD_ValueKind kind, const char *key,
+                                    const char *filename, const char *content_type,
+                                    const char *transfer_encoding, const char *data,
+                                    uint64_t off, size_t size) 
+{
+
+    struct ConnectionInfo *con_info = coninfo_cls;
+
+    // Only process file upload fields
+    if (0 != strcmp(key, "file"))
+    {
+        return MHD_YES;
+    }
+
+    if (!con_info->fp)
+    {
+        char file_path[FILENAME_MAX];
+        snprintf(file_path, sizeof(file_path), "%s/%s", storage_dir, filename);
+
+        con_info->fp = fopen(file_path, "ab");
+        if (!con_info->fp)
+        {
+            return MHD_NO; // Cannot open file
+        }
+    }
+
+    if (size > 0)
+    {
+        if (con_info->total_size + size > file_max_byte)
+        {
+            return MHD_NO; // Exceeds file size limit
+        }
+        fwrite(data, 1, size, con_info->fp);
+        con_info->total_size += size;
+    }
+
+    return MHD_YES;
+}
+
+static enum MHD_Result upload_req_handler(struct MHD_Connection *connection, const char *upload_data, size_t *upload_data_size, void **con_cls)
+{
+
+    printf("POST: %zu bytes\n", *upload_data_size);
+
+    if (NULL == *con_cls)
+    {
+        // first time post, create ConnectionInfo
+        struct ConnectionInfo *con_info = malloc(sizeof(struct ConnectionInfo));
+        if (NULL == con_info)
+        {
+            return MHD_NO;
+        }
+        con_info->fp = NULL;
+        con_info->total_size = 0;
+        con_info->post_processor = MHD_create_post_processor(connection, 64 * 1024, &iterate_post, con_info);
+
+        if (NULL == con_info->post_processor)
+        {
+            free(con_info);
+            return MHD_NO;
+        }
+
+        *con_cls = (void *)con_info;
+        return MHD_YES;
+    }
+
+    // upload file
+    struct ConnectionInfo *con_info = *con_cls;
+    if (*upload_data_size)
+    {
+        if (con_info->total_size + *upload_data_size > file_max_byte)
+        {
+            // Incoming data exceeds file size limit
+            return MHD_NO;
+        }
+
+        MHD_post_process(con_info->post_processor, upload_data, *upload_data_size);
+        con_info->total_size += *upload_data_size;
+        *upload_data_size = 0;
+        return MHD_YES;
+    }
+    else
+    {
+        // request complete, do some cleaning
+        struct ConnectionInfo *con_info = *con_cls;
+        if (NULL == con_info)
+            return MHD_NO;
+
+        // Send response indicating upload is complete
+        const char *page = "<html><body>File uploaded successfully.</body></html>";
+        struct MHD_Response *response = MHD_create_response_from_buffer(strlen(page), (void *)page, MHD_RESPMEM_PERSISTENT);
+        MHD_queue_response(connection, MHD_HTTP_OK, response);
+        MHD_destroy_response(response);
+
+        if (con_info->fp)
+        {
+            fclose(con_info->fp);
+        }
+
+        if (con_info->post_processor)
+        {
+            MHD_destroy_post_processor(con_info->post_processor);
+        }
+
+        free(con_info);
+        *con_cls = NULL;
+    }
+}
+
+/*
+ * Main entry for handling the web request
+ * Returns: MHD_Result
+ *
+ */
+static enum MHD_Result ahc_echo(void *cls,
+                                struct MHD_Connection *connection,
+                                const char *url,
+                                const char *method,
+                                const char *version,
+                                const char *upload_data, size_t *upload_data_size, void **con_cls)
+{
+    char file_path[64];
+
+    (void)cls;     /* Unused. Silent compiler warning. */
+    (void)version; /* Unused. Silent compiler warning. */
+
+    // request handler
+    if (strcmp(method, "GET"))
+    {
+        /*
+            Get request handler
+            1. response root index.html
+            2. make css, js, pages folder as static
+            3. server all files in storage_dir
+        */
+        if (strcmp(url, "/") == 0 || strcmp(url, "/index.html") == 0)
+        {
+            strcpy(file_path, "./index.html");
+        }
+        else if (strncmp(url, "/css", 4) == 0 || strncmp(url, "/js", 3) == 0 || strncmp(url, "/pages", 6) == 0)
+        {
+            snprintf(file_path, sizeof(file_path), ".%s", url);
+        }
+        else
+        {
+            // invalid GET, reponse index.html to handle such situation
+            printf("GET(X): %s\n", url);
+            strcpy(file_path, "./index.html");
+        }
+
+        return get_req_handler(connection, file_path);
+    }
+    else if (strcmp(method, "POST"))
+    {
+        /*
+            Post request handler
+            1. /upload: file uploading router
+        */
+        if (strcmp(url, "/") == 0)
+        {
+            return upload_req_handler(connection, upload_data, upload_data_size, con_cls);
+        }
+
+        // invalid POST, reponse index.html to handle such situation
+        printf("POST(X): %s\n", file_path);
+        strcpy(file_path, "./index.html");
+        return get_req_handler(connection, "./index.html");
+    }
+
+    return MHD_NO; /* unexpected method */
+}
+
 int main(int argc, char *const *argv)
 {
-    signal(SIGINT, signal_handler);  // Handle Ctrl+C (SIGINT)
-    signal(SIGTERM, signal_handler); // Handle termination (SIGTERM)
+
+    // signal handling
+    signal(SIGINT, terminate_handler);
+    signal(SIGTERM, terminate_handler);
 
     if (argc != 2)
     {
@@ -318,38 +486,32 @@ int main(int argc, char *const *argv)
         return 1;
     }
 
-    // if (config_loader() == 1)
-    // {
-    //     fprintf(stderr, "config file load error\n");
-    //     return 1;
-    // }
+    // initialize global config parameter
+    if (config_initialize() == 1)
+    {
+        fprintf(stderr, "config file load error\n");
+        return 1;
+    }
 
     // Create the worker thread
-    if (pthread_create(&tid, NULL, worker_thread, NULL) != 0)
+    if (pthread_create(&tid, NULL, cleaner_worker, NULL) != 0)
     {
         fprintf(stderr, "Error creating thread\n");
         return EXIT_FAILURE;
     }
 
-    printf("server start at port: %s\n", argv[1]);
+    // start server
     d = MHD_start_daemon(MHD_USE_AUTO | MHD_USE_INTERNAL_POLLING_THREAD | MHD_USE_ERROR_LOG,
                          atoi(argv[1]), NULL, NULL,
                          &ahc_echo, NULL,
                          MHD_OPTION_END);
+
     if (NULL == d)
     {
         fprintf(stderr, "server start failed\n");
         return 1;
     }
 
-    (void)getc(stdin);
-
-    thread_should_stop = 1;
-
-    pthread_join(tid, NULL);
-    printf("dispathcing thread end\n");
-    MHD_stop_daemon(d);
-    printf("server stoped\n");
-    printf("bye\n");
+    terminate_handler(-1);
     return 0;
 }
