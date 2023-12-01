@@ -1,78 +1,120 @@
-html,
-body {
-    font-family: sans-serif;
+body,
+html {
+    height: 100%;
     margin: 0;
-    height: 100%;
-}
-
-p {
-    margin-block-start: 0;
-    text-indent: 1rem;
-}
-
-hr {
-    border: none;
-    height: 1px;
-    background-color: lightgray;
-    width: 40px;
-    margin: 1.5rem 0 1rem 0;
-}
-
-#root {
     display: flex;
-    height: 100%;
-}
-
-#main-page {
-    flex-grow: 1;
-}
-
-.sidebar {
-    display: flex;
-    flex-direction: column;
-    padding: 1rem;
-
-    border-right: 1px solid lightgray;
-}
-
-.sidebar > a {
-    margin: 0.5rem 0;
-}
-
-.page-container {
-    display: flex;
-    flex-direction: column;
-
-    padding: 0 1rem;
-}
-
-.align-center {
+    justify-content: center;
     align-items: center;
+    background-color: #f7f7f7;
+    font-family: "Open Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft Yahei", "WenQuanYi Micro Hei", "Segoe UI Emoji", "Segoe UI Symbol", Helvetica, Arial, -apple-system, system-ui, sans-serif;
 }
 
-.socials-container {
-    display: flex;
-    justify-content: space-between;
+.content-container {
+    text-align: center;
+    border: 1px solid #ddd;
+    /* Border added here */
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
+    /* Optional: added shadow for depth */
 }
 
-.socials-card {
+.number-display {
+    font-size: 2em;
+    margin-bottom: 20px;
+    border: 2px solid #ddd;
+    /* Added a more pronounced border to the display */
+    border-radius: 5px;
+    /* Rounded corners for the input field */
+    background-color: #fff;
+    max-width: 180px;
+    padding: 10px;
+    /* Padding for aesthetic spacing inside the input field */
+    outline: none;
+    color: #333;
+}
+
+.dial-pad {
     display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 300px;
+}
+
+.dial-button {
+    display: flex;
+    justify-content: center;
     align-items: center;
+    margin: 10px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background-color: #ffffff;
+    box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.2);
+    cursor: pointer;
+    user-select: none;
+}
 
-    border: 1px solid lightgray;
-    border-radius: 0.5rem;
-    padding: 0.5rem 1rem;
-    margin: 1rem;
+.icon {
+    font-size: 24px;
+    color: #333;
+}
 
+#title {
+    font-size: 30px;
+    margin-bottom: 15px;
+    user-select: none;
+    filter: drop-shadow(2px 6px 8px yellow);
+}
+
+
+#tab-container {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 20px;
+  }
+
+  .tab {
+    padding: 10px 20px;
+    margin: 0 5px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    background-color: #fff;
     text-decoration: none;
-    color: unset;
-}
+    color: #333;
+    font-weight: bold;
+    cursor: pointer;
+  }
 
-.socials-card:hover {
-    background-color: lightgray;
-}
+  .tab:hover {
+    background-color: #f0f0f0;
+  }
 
-.socials-card > i {
-    font-size: 1.5rem;
-    margin-right: 0.5rem;
-}
+  .file-upload-label {
+    display: inline-block;
+    padding: 10px 20px;
+    margin: 10px;
+    background-color: #f7f7f7;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  }
+
+  .file-upload-label:hover {
+    background-color: #eaeaea;
+  }
+
+  .upload-button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    background-color: #4CAF50;
+    color: white;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  }
+
+  .upload-button:hover {
+    background-color: #45a049;
+  }

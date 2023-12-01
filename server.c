@@ -82,6 +82,7 @@ int config_initialize()
  * no heap use, kill it as you wish
  *
  */
+
 void *cleaner_worker(void *arg)
 {
     struct timespec ts;
