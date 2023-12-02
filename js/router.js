@@ -17,6 +17,43 @@ function upload_reload() {
             // Handle any errors
             console.error('There has been a problem with your fetch operation:', error);
         });
+
+    var dropZone = document.getElementById('drop_zone_container');
+
+    dropZone.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.add('over');
+    });
+
+    dropZone.addEventListener('dragleave', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove('over');
+    });
+
+    dropZone.addEventListener('drop', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove('over');
+
+        var files = e.dataTransfer.files;
+        if (files.length > 0) {
+            var formData = new FormData();
+            formData.append('file', files[0]);
+
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '/', true);
+            xhr.onload = function () {
+                if (xhr.status === 200) {
+                    alert('File uploaded successfully!');
+                } else {
+                    alert('Upload error!');
+                }
+            };
+            xhr.send(formData);
+        }
+    });
 }
 
 /*

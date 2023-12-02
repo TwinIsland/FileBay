@@ -15,3 +15,6 @@
 server
 *.o
 test.html
+
+# folder create in run time
+files/

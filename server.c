@@ -8,17 +8,20 @@
 #include <dirent.h>
 #include <signal.h>
 
+#include <sys/stat.h>
+
+
 // comment in out in product environment
 #define debug 1
 
+#define CONFIG_FILE "CONFIG"
 #define CONFIG_NUM_EXPECT 4
 
 static int thread_should_stop = 0;
 static pthread_t tid;
 static struct MHD_Daemon *d;
-static char *config_file = "CONFIG";
 
-// Config parameter
+// config parameter
 static long file_max_byte, file_expire, worker_period_minute;
 static char storage_dir[128];
 
@@ -36,7 +39,7 @@ struct ConnectionInfo
  */
 int config_initialize()
 {
-    FILE *file = fopen(config_file, "r");
+    FILE *file = fopen(CONFIG_FILE, "r");
     if (file == NULL)
     {
         perror("Error opening config file");
@@ -89,18 +92,23 @@ void *cleaner_worker(void *arg)
 
     while (!thread_should_stop)
     {
-
 #ifdef debug
         printf("(DEBUG) cleaner worker wake up\n");
-        sleep(1);
-        printf("(DEBUG) cleaner thread sleep\n");
-        sleep(10);
-        goto while_end;
 #endif
 
-        sleep(worker_period_minute * 60);
+        // create storage_dir if need
+        struct stat st = {0};
+        if (stat(storage_dir, &st) == -1)
+        {
+            // Directory does not exist, create it
+            if (mkdir(storage_dir, 0700) == -1)
+            {
+                perror("Error creating directory");
+                exit(EXIT_FAILURE);
+            }
+        }
 
-        // Open the directory
+        // open the directory
         DIR *dir = opendir(storage_dir);
         if (dir == NULL)
         {
@@ -124,17 +132,23 @@ void *cleaner_worker(void *arg)
             // Delete the file
             if (remove(file_path) == 0)
             {
-                printf("Deleted file: %s\n", file_path);
+                printf("Worker: Deleted file: %s\n", file_path);
             }
             else
             {
-                perror("Error deleting file");
+                perror("Worker: Error deleting file");
             }
         }
 
         // Close the directory
         closedir(dir);
-    while_end:
+
+#ifdef debug
+        printf("(DEBUG) cleaner worker sleep\n");
+#endif
+
+        // sleep untile another period
+        sleep(worker_period_minute * 60);
     }
 
     return NULL;
@@ -222,7 +236,7 @@ static enum MHD_Result body_compress(void **buf,
     return MHD_YES;
 }
 
-static enum MHD_Result get_req_handler(struct MHD_Connection *connection, char *file_path)
+static enum MHD_Result response_file(struct MHD_Connection *connection, char *file_path)
 {
     struct MHD_Response *response;
     enum MHD_Result ret;
@@ -302,14 +316,31 @@ static enum MHD_Result get_req_handler(struct MHD_Connection *connection, char *
     return ret;
 }
 
-static enum MHD_Result iterate_post(void *coninfo_cls, enum MHD_ValueKind kind, const char *key,
+/*
+ * Response with string, be aware that parameter 'content' should always be on stack
+ * Returns: MHD_Result
+ *
+ */
+static enum MHD_Result response_str(struct MHD_Connection *connection, char *router_name, char *content)
+{
+    printf("GET: /%s\n", router_name);
+    struct MHD_Response *response = MHD_create_response_from_buffer(strlen(content), (void *)content, MHD_RESPMEM_MUST_COPY);
+    if (response == NULL)
+        return MHD_NO;
+    int ret = MHD_queue_response(connection, MHD_HTTP_OK, response);
+    MHD_destroy_response(response);
+    return ret;
+}
+
+
+static enum MHD_Result upload_req_callback(void *coninfo_cls, enum MHD_ValueKind kind, const char *key,
                                     const char *filename, const char *content_type,
                                     const char *transfer_encoding, const char *data,
                                     uint64_t off, size_t size)
 {
-
     struct ConnectionInfo *con_info = coninfo_cls;
 
+    // printf("file type: %s\n", key);
     // Only process file upload fields
     if (0 != strcmp(key, "file"))
     {
@@ -344,7 +375,7 @@ static enum MHD_Result iterate_post(void *coninfo_cls, enum MHD_ValueKind kind, 
 static enum MHD_Result upload_req_handler(struct MHD_Connection *connection, const char *upload_data, size_t *upload_data_size, void **con_cls)
 {
 
-    printf("POST: %zu bytes\n", *upload_data_size);
+    // printf("POST: %zu bytes\n", *upload_data_size);
 
     if (NULL == *con_cls)
     {
@@ -356,7 +387,7 @@ static enum MHD_Result upload_req_handler(struct MHD_Connection *connection, con
         }
         con_info->fp = NULL;
         con_info->total_size = 0;
-        con_info->post_processor = MHD_create_post_processor(connection, 64 * 1024, &iterate_post, con_info);
+        con_info->post_processor = MHD_create_post_processor(connection, 64 * 1024, &upload_req_callback, con_info);
 
         if (NULL == con_info->post_processor)
         {
@@ -413,22 +444,6 @@ static enum MHD_Result upload_req_handler(struct MHD_Connection *connection, con
 
 
 /*
-* Response with string, be aware that parameter 'content' should always be on stack
-* Returns: MHD_Result
-*
-*/
-static enum MHD_Result response_str(struct MHD_Connection *connection, char *router_name, char *content)
-{
-    printf("GET: /%s\n", router_name);
-    struct MHD_Response *response = MHD_create_response_from_buffer(strlen(content), (void *)content, MHD_RESPMEM_MUST_COPY);
-    if (response == NULL)
-        return MHD_NO;
-    int ret = MHD_queue_response(connection, MHD_HTTP_OK, response);
-    MHD_destroy_response(response);
-    return ret;
-}
-
-/*
  * Main entry for handling the web request
  * Returns: MHD_Result
  *
@@ -455,7 +470,6 @@ static enum MHD_Result ahc_echo(void *cls,
             3. server all files in storage_dir
             4. /max_size: return the max file size limit
         */
-
         if (!*con_cls)
         {
             *con_cls = (void *)1;
@@ -484,23 +498,28 @@ static enum MHD_Result ahc_echo(void *cls,
             strcpy(file_path, "./index.html");
         }
 
-        return get_req_handler(connection, file_path);
+        return response_file(connection, file_path);
     }
     else if (strcmp(method, "POST") == 0)
     {
         /*
             Post request handler
             1. /upload: file uploading router
+            2. /file: get file given file id
         */
         if (strcmp(url, "/") == 0)
         {
             return upload_req_handler(connection, upload_data, upload_data_size, con_cls);
         }
+        if (strcmp(url, "/file") == 0)
+        {
+            // TODO: finish it 
+        }
 
         // invalid POST, reponse index.html to handle such situation
         printf("POST(X): %s\n", file_path);
         strcpy(file_path, "./index.html");
-        return get_req_handler(connection, "./index.html");
+        return response_file(connection, "./index.html");
     }
 
     return MHD_NO; /* unexpected method */
