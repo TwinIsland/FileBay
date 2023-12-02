@@ -1,4 +1,4 @@
 file_max_byte:10485760
 file_expire:1440
-worker_period_minute:720
+worker_period:720
 storage_dir:./files

@@ -22,6 +22,15 @@ chmod +x INSTALL
 ```
 
 ## Run 🐎
+**(Optional)** change the `CONFIG` to meet your demand:
+```bash
+file_max_byte:10485760   # Maximum file size, in byte
+file_expire:1440         # Worker will delete the file after this time, in minute
+worker_period:720        # Worker running period, in minute
+storage_dir:./files      # Where should uploaded files be stored
+```
+
+Then, compile adn run
 ```bash
 # make the executable
 make

@@ -60,7 +60,7 @@ int config_initialize()
         {
             config_count++;
         }
-        else if (sscanf(line, "worker_period_minute:%ld", &worker_period_minute) == 1)
+        else if (sscanf(line, "worker_period:%ld", &worker_period_minute) == 1)
         {
             config_count++;
         }
