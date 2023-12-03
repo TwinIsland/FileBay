@@ -146,7 +146,7 @@ int deserializeFileNodeList()
     // check for version mismatched
     int dist_serialization_ver;
     ret = fread(&dist_serialization_ver, sizeof(int), 1, file);
-    if (dist_serialization_ver != serialization_ver)
+    if (!ret && dist_serialization_ver != serialization_ver)
     {
         fprintf(stderr, "dist dump version %d mismatched with %d\n", dist_serialization_ver, serialization_ver);
         fclose(file);
@@ -304,8 +304,8 @@ void terminate_handler(int signum)
     printf("cleaner thread end\n");
     MHD_stop_daemon(d);
     printf("server stoped\n");
-    free_FileNode_list();
     serializeFileNodeList();
+    free_FileNode_list();
     printf("bye\n");
     exit(0);
 }
