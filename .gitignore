@@ -15,6 +15,7 @@
 server
 *.o
 test.html
+dump.bin
 
 # folder create in run time
 files/
