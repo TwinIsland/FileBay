@@ -28,7 +28,7 @@ static long file_max_byte, file_expire, worker_period_minute;
 static char storage_dir[128], dump_dist[128];
 
 // version parameter, use to check serialzation version conflict
-static int serialization_ver = '1';
+static unsigned char serialization_ver = 1;
 
 struct ConnectionInfo
 {
@@ -44,6 +44,7 @@ typedef struct FileNode
     char *file_name;
     size_t file_size;
     time_t expire_time;
+    unsigned int pwd;
 } FileNode;
 
 static FileNode *FileNodeHead;
@@ -54,7 +55,36 @@ static int FileNode_max = 0;
  * helper functions for managing file node list
  *
  */
-void add_FileNode(FileNode *cur)
+unsigned int generate_rand_6digit()
+{
+    // Initialize random number generator the first time the function is called
+    static int initialized = 0;
+    if (!initialized)
+    {
+        srand(time(NULL));
+        initialized = 1;
+    }
+
+    return 100000 + rand() % 900000;
+}
+
+FileNode create_FileNode(char *file_name, size_t file_size)
+{
+    time_t cur_time;
+    time(&cur_time);
+
+    FileNode node = {
+        .file_name = strdup(file_name),
+        .file_size = file_size,
+        .id = FileNode_off,
+        .expire_time = cur_time + file_expire * 60,
+        .pwd = generate_rand_6digit(),
+    };
+
+    return node;
+}
+
+int add_FileNode(FileNode cur)
 {
     // Allocate memory if not already done
     if (!FileNodeHead)
@@ -63,7 +93,7 @@ void add_FileNode(FileNode *cur)
         if (!FileNodeHead)
         {
             perror("Failed to allocate memory for FileNodeHead");
-            return;
+            return 1;
         }
         FileNode_off = 0;
         FileNode_max = FileNodePerMalloc;
@@ -76,15 +106,16 @@ void add_FileNode(FileNode *cur)
         if (!temp)
         {
             perror("Failed to reallocate memory for FileNodeHead");
-            return;
+            return 1;
         }
         FileNodeHead = temp;
         FileNode_max += FileNodePerMalloc;
     }
 
-    // Copy the new node to the correct location
-    memcpy(FileNodeHead + FileNode_off, cur, sizeof(FileNode));
+    // Copy the new node to the heap
+    memcpy(FileNodeHead + FileNode_off, &cur, sizeof(FileNode));
     FileNode_off++;
+    return 0;
 }
 
 void free_FileNode_list()
@@ -113,7 +144,7 @@ int serializeFileNodeList()
     }
 
     // dump the file node list version
-    fwrite(&serialization_ver, sizeof(int), 1, file);
+    fwrite(&serialization_ver, sizeof(unsigned char), 1, file);
 
     for (int i = 0; i < FileNode_off; i++)
     {
@@ -121,6 +152,7 @@ int serializeFileNodeList()
         fwrite(&FileNodeHead[i].id, sizeof(int), 1, file);
         fwrite(&FileNodeHead[i].file_size, sizeof(size_t), 1, file);
         fwrite(&FileNodeHead[i].expire_time, sizeof(time_t), 1, file);
+        fwrite(&FileNodeHead[i].pwd, sizeof(unsigned int), 1, file);
 
         // Serialize file_name
         size_t name_length = strlen(FileNodeHead[i].file_name) + 1; // +1 for null terminator
@@ -143,9 +175,10 @@ int deserializeFileNodeList()
     size_t name_length;
     int ret;
 
+
     // check for version mismatched
-    int dist_serialization_ver;
-    ret = fread(&dist_serialization_ver, sizeof(int), 1, file);
+    unsigned char dist_serialization_ver;
+    ret = fread(&dist_serialization_ver, sizeof(unsigned char), 1, file);
     if (!ret && dist_serialization_ver != serialization_ver)
     {
         fprintf(stderr, "dist dump version %d mismatched with %d\n", dist_serialization_ver, serialization_ver);
@@ -155,13 +188,14 @@ int deserializeFileNodeList()
 
     while (fread(&node.id, sizeof(int), 1, file) == 1 &&
            fread(&node.file_size, sizeof(size_t), 1, file) == 1 &&
-           fread(&node.expire_time, sizeof(time_t), 1, file) == 1)
+           fread(&node.expire_time, sizeof(time_t), 1, file) == 1 &&
+           fread(&node.pwd, sizeof(unsigned int), 1, file) == 1)
     {
         ret = fread(&name_length, sizeof(size_t), 1, file);
         node.file_name = malloc(name_length * sizeof(char));
         ret = fread(node.file_name, sizeof(char), name_length, file);
         (void)ret;
-        add_FileNode(&node);
+        add_FileNode(node);
     }
 
     fclose(file);
@@ -673,9 +707,7 @@ void test_FileNodeOperations()
     // Adding 12 FileNodes
     for (int i = 0; i < 12; i++)
     {
-        FileNode node;
-        node.file_name = strdup("file");
-        add_FileNode(&node);
+        add_FileNode(create_FileNode("file", 128));
     }
 
     // Serialize the list
