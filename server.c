@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include <microhttpd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -274,7 +276,7 @@ int config_initialize()
  *
  */
 
-void *cleaner_worker(void *arg)
+void *cleaner_worker()
 {
     while (!thread_should_stop)
     {
@@ -285,7 +287,7 @@ void *cleaner_worker(void *arg)
         {
             time_t current_time;
             time(&current_time);
-            char filepath[128];
+            char filepath[256];
 
             for (int i = 0; i < FileNode_off; ++i)
             {
@@ -325,7 +327,7 @@ void *cleaner_worker(void *arg)
  * terminate handler for interupt signal and final cleanup
  *
  */
-void terminate_handler(int signum)
+void terminate_handler()
 {
     thread_should_stop = 1;
     pthread_cancel(tid);
@@ -415,7 +417,7 @@ response_file(struct MHD_Connection *connection, char *file_path)
     enum MHD_Result comp;
 
     FILE *file;
-    long file_size;
+    size_t file_size;
     char *file_buf;
 
     printf("GET: %s\n", file_path);
@@ -514,6 +516,11 @@ upload_req_callback(void *coninfo_cls, enum MHD_ValueKind kind, const char *key,
 {
     struct ConnectionInfo *con_info = coninfo_cls;
 
+    (void) kind;
+    (void) content_type;
+    (void) transfer_encoding;
+    (void) off;
+
     // printf("file type: %s\n", key);
     // Only process file upload fields
     if (0 != strcmp(key, "file"))
@@ -535,7 +542,7 @@ upload_req_callback(void *coninfo_cls, enum MHD_ValueKind kind, const char *key,
 
     if (size > 0)
     {
-        if (con_info->total_size + size > file_max_byte)
+        if (con_info->total_size + size > (size_t)file_max_byte)
         {
             return MHD_NO; // Exceeds file size limit
         }
@@ -576,7 +583,7 @@ upload_req_handler(struct MHD_Connection *connection, const char *upload_data, s
     struct ConnectionInfo *con_info = *con_cls;
     if (*upload_data_size)
     {
-        if (con_info->total_size + *upload_data_size > file_max_byte)
+        if (con_info->total_size + *upload_data_size > (size_t)file_max_byte)
         {
             printf("file too large\n");
             con_info->file_too_large_flag = 1;

@@ -32,9 +32,10 @@ file_expire:1440         # Worker will delete the file after this time, in minut
 worker_period:720        # Worker running period, in minute
 storage_dir:./files      # Where should uploaded files be stored
 dump_dist:./dump.bin	 # Where should the serialized binary be stored
+max_file_count:100       # Max file number serve
 ```
 
-Then, compile and run
+Then, compile and run:
 
 ```bash
 # make the executable
@@ -43,3 +44,10 @@ make
 # start the server
 ./server PORT
 ```
+
+If `Make` is not installed on your system, consider using the [nobuild toolkit](https://github.com/tsoding/nobuild). Essentially, it functions as a C-driven alternative to Make, offering support for both POSIX-compliant systems and Windows environments using MSVC.
+
++ `$ cc nobuild.c -o nobuild` on POSIX systems
++ `$ cl.exe nobuild.c` on Windows with MSVC
+
+Then, Run the build: `$ ./nobuild`
