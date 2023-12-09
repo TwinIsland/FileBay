@@ -1,6 +1,6 @@
 # Compiler settings
 CC = gcc
-CFLAGS = -O3 -march=native -flto -Wall
+CFLAGS = -O3 -march=native -flto -Wall -Wextra -std=c99
 LDFLAGS = -lmicrohttpd -lz
 
 # Source files

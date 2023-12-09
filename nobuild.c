@@ -20,8 +20,26 @@ void build_server()
 int main(int argc, char **argv)
 {
     GO_REBUILD_URSELF(argc, argv);
-    
-    build_server();
+
+    switch (argc)
+    {
+    case 1:
+        build_server();
+        break;
+
+    case 2:
+        if (ENDS_WITH(argv[1], "clean"))
+        {
+            RM("server");
+            RM("server.o");
+        } else {
+            goto print_usgae;
+        }
+        break;
+    default:
+print_usgae:
+        printf("usage: %s <clean>\n", argv[0]);
+    }
 
     return 0;
 }
