@@ -3,3 +3,4 @@ file_expire:1440
 worker_period:720
 storage_dir:./files
 dump_dist:./dump.bin
+max_file_count:100

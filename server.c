@@ -8,27 +8,26 @@
 #include <dirent.h>
 #include <signal.h>
 
-#include <sys/stat.h>
-
 // comment in out in production environment
-#define debug 1
+// #define debug 1
 // #define test 1
 
 #define CONFIG_FILE "CONFIG"
-#define CONFIG_NUM_EXPECT 5
+#define CONFIG_NUM_EXPECT 6
 
 #define FileNodePerMalloc 5
 
 static int thread_should_stop = 0;
 static pthread_t tid;
+static int cur_file_count = 0;
 static struct MHD_Daemon *d;
 
 // config parameter
-static long file_max_byte, file_expire, worker_period_minute;
+static int file_max_byte, file_expire, worker_period_minute, max_file_count;
 static char storage_dir[128], dump_dist[128];
 
 // version parameter, use to check serialzation version conflict
-static unsigned char serialization_ver = 1;
+static unsigned char serialization_ver = 2;
 
 struct ConnectionInfo
 {
@@ -41,6 +40,7 @@ struct ConnectionInfo
 typedef struct FileNode
 {
     int id;
+    int is_del;
     char *file_name;
     size_t file_size;
     time_t expire_time;
@@ -77,6 +77,7 @@ FileNode create_FileNode(char *file_name, size_t file_size)
         .file_name = strdup(file_name),
         .file_size = file_size,
         .id = FileNode_off,
+        .is_del = 0,
         .expire_time = cur_time + file_expire * 60,
         .pwd = generate_rand_6digit(),
     };
@@ -114,6 +115,7 @@ int add_FileNode(FileNode cur)
 
     // Copy the new node to the heap
     memcpy(FileNodeHead + FileNode_off, &cur, sizeof(FileNode));
+    cur_file_count++;
     FileNode_off++;
     return 0;
 }
@@ -134,7 +136,7 @@ void free_FileNode_list()
     }
 }
 
-int serializeFileNodeList()
+int serialize_FileNodeList()
 {
     FILE *file = fopen(dump_dist, "wb");
     if (!file)
@@ -148,8 +150,13 @@ int serializeFileNodeList()
 
     for (int i = 0; i < FileNode_off; i++)
     {
+        if (FileNodeHead[i].is_del) {
+            // ignore if the FileNode marked as delete
+            continue;
+        }
         // Serialize id, file_size, expire_time as before
         fwrite(&FileNodeHead[i].id, sizeof(int), 1, file);
+        fwrite(&FileNodeHead[i].is_del, sizeof(int), 1, file);
         fwrite(&FileNodeHead[i].file_size, sizeof(size_t), 1, file);
         fwrite(&FileNodeHead[i].expire_time, sizeof(time_t), 1, file);
         fwrite(&FileNodeHead[i].pwd, sizeof(unsigned int), 1, file);
@@ -165,7 +172,7 @@ int serializeFileNodeList()
     return 0; // Success
 }
 
-int deserializeFileNodeList()
+int deserialize_FileNodeList()
 {
     FILE *file = fopen(dump_dist, "rb");
     if (!file)
@@ -175,11 +182,10 @@ int deserializeFileNodeList()
     size_t name_length;
     int ret;
 
-
     // check for version mismatched
     unsigned char dist_serialization_ver;
     ret = fread(&dist_serialization_ver, sizeof(unsigned char), 1, file);
-    if (!ret && dist_serialization_ver != serialization_ver)
+    if (ret && dist_serialization_ver != serialization_ver)
     {
         fprintf(stderr, "dist dump version %d mismatched with %d\n", dist_serialization_ver, serialization_ver);
         fclose(file);
@@ -187,6 +193,7 @@ int deserializeFileNodeList()
     }
 
     while (fread(&node.id, sizeof(int), 1, file) == 1 &&
+           fread(&node.is_del, sizeof(int), 1, file) == 1 &&
            fread(&node.file_size, sizeof(size_t), 1, file) == 1 &&
            fread(&node.expire_time, sizeof(time_t), 1, file) == 1 &&
            fread(&node.pwd, sizeof(unsigned int), 1, file) == 1)
@@ -223,15 +230,15 @@ int config_initialize()
 
     while (fgets(line, sizeof(line), file))
     {
-        if (sscanf(line, "file_max_byte:%ld", &file_max_byte) == 1)
+        if (sscanf(line, "file_max_byte:%d", &file_max_byte) == 1)
         {
             config_count++;
         }
-        else if (sscanf(line, "file_expire:%ld", &file_expire) == 1)
+        else if (sscanf(line, "file_expire:%d", &file_expire) == 1)
         {
             config_count++;
         }
-        else if (sscanf(line, "worker_period:%ld", &worker_period_minute) == 1)
+        else if (sscanf(line, "worker_period:%d", &worker_period_minute) == 1)
         {
             config_count++;
         }
@@ -243,12 +250,20 @@ int config_initialize()
         {
             config_count++;
         }
+        else if (sscanf(line, "max_file_count:%d", &max_file_count) == 1)
+        {
+            config_count++;
+        }
+        else
+        {
+            fprintf(stderr, "WARNING: invalid config line read: %s\n", line);
+        }
     }
     fclose(file);
 
     if (config_count != CONFIG_NUM_EXPECT)
     {
-        perror("config load error");
+        fprintf(stderr, "config load error\n");
         return 1;
     }
 
@@ -268,53 +283,34 @@ void *cleaner_worker(void *arg)
 #ifdef debug
         printf("(DEBUG) cleaner worker wake up\n");
 #endif
-
-        // create storage_dir if need
-        struct stat st = {0};
-        if (stat(storage_dir, &st) == -1)
+        if (FileNodeHead)
         {
-            // Directory does not exist, create it
-            if (mkdir(storage_dir, 0700) == -1)
+            time_t current_time;
+            time(&current_time);
+            char filepath[128];
+
+            for (int i = 0; i < FileNode_off; ++i)
             {
-                perror("Error creating directory");
-                exit(EXIT_FAILURE);
+#ifdef debug
+                printf("(DEBUG) file_id %d file_name %s expire %ld current %ld is_del %d\n", 
+                FileNodeHead[i].id, FileNodeHead[i].file_name, FileNodeHead[i].expire_time, current_time, FileNodeHead[i].is_del);
+#endif
+                if (!FileNodeHead[i].is_del && FileNodeHead[i].expire_time <= current_time)
+                {
+                    snprintf(filepath, sizeof(filepath), "%s%d", storage_dir, FileNodeHead[i].id);
+
+                    if (remove(filepath) != 0)
+                    {
+                        fprintf(stderr, "(Worker) Error deleting file %s", FileNodeHead[i].file_name);
+                    }
+                    else
+                    {
+                        printf("(Worker) removing expired (%ld) file: %s\n", current_time - FileNodeHead[i].expire_time, FileNodeHead[i].file_name);
+                    }
+                    FileNodeHead[i].is_del = 1;
+                }
             }
         }
-
-        // open the directory
-        DIR *dir = opendir(storage_dir);
-        if (dir == NULL)
-        {
-            perror("Error opening directory");
-            exit(EXIT_FAILURE);
-        }
-
-        struct dirent *entry;
-        while ((entry = readdir(dir)) != NULL)
-        {
-            // Skip "." and ".." entries
-            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-            {
-                continue;
-            }
-
-            // Construct the full path of the file
-            char file_path[128];
-            snprintf(file_path, sizeof(file_path), "%s/%s", storage_dir, entry->d_name);
-
-            // Delete the file
-            if (remove(file_path) == 0)
-            {
-                printf("Worker: Deleted file: %s\n", file_path);
-            }
-            else
-            {
-                perror("Worker: Error deleting file");
-            }
-        }
-
-        // Close the directory
-        closedir(dir);
 
 #ifdef debug
         printf("(DEBUG) cleaner worker sleep\n");
@@ -338,7 +334,7 @@ void terminate_handler(int signum)
     printf("cleaner thread end\n");
     MHD_stop_daemon(d);
     printf("server stoped\n");
-    serializeFileNodeList();
+    serialize_FileNodeList();
     free_FileNode_list();
     printf("bye\n");
     exit(0);
@@ -350,7 +346,8 @@ void terminate_handler(int signum)
  *
  */
 
-static enum MHD_Result can_compress(struct MHD_Connection *con)
+static enum MHD_Result
+can_compress(struct MHD_Connection *con)
 {
     const char *ae;
     const char *de;
@@ -382,8 +379,9 @@ static enum MHD_Result can_compress(struct MHD_Connection *con)
  * Returns: MHD_Result
  *
  */
-static enum MHD_Result body_compress(void **buf,
-                                     size_t *buf_size)
+static enum MHD_Result
+body_compress(void **buf,
+              size_t *buf_size)
 {
     Bytef *cbuf;
     uLongf cbuf_size;
@@ -411,7 +409,8 @@ static enum MHD_Result body_compress(void **buf,
     return MHD_YES;
 }
 
-static enum MHD_Result response_file(struct MHD_Connection *connection, char *file_path)
+static enum MHD_Result
+response_file(struct MHD_Connection *connection, char *file_path)
 {
     struct MHD_Response *response;
     enum MHD_Result ret;
@@ -496,7 +495,8 @@ static enum MHD_Result response_file(struct MHD_Connection *connection, char *fi
  * Returns: MHD_Result
  *
  */
-static enum MHD_Result response_json(struct MHD_Connection *connection, char *content)
+static enum MHD_Result
+response_json(struct MHD_Connection *connection, char *content)
 {
     struct MHD_Response *response = MHD_create_response_from_buffer(strlen(content), (void *)content, MHD_RESPMEM_MUST_COPY);
     if (response == NULL)
@@ -508,10 +508,11 @@ static enum MHD_Result response_json(struct MHD_Connection *connection, char *co
     return ret;
 }
 
-static enum MHD_Result upload_req_callback(void *coninfo_cls, enum MHD_ValueKind kind, const char *key,
-                                           const char *filename, const char *content_type,
-                                           const char *transfer_encoding, const char *data,
-                                           uint64_t off, size_t size)
+static enum MHD_Result
+upload_req_callback(void *coninfo_cls, enum MHD_ValueKind kind, const char *key,
+                    const char *filename, const char *content_type,
+                    const char *transfer_encoding, const char *data,
+                    uint64_t off, size_t size)
 {
     struct ConnectionInfo *con_info = coninfo_cls;
 
@@ -547,7 +548,8 @@ static enum MHD_Result upload_req_callback(void *coninfo_cls, enum MHD_ValueKind
     return MHD_YES;
 }
 
-static enum MHD_Result upload_req_handler(struct MHD_Connection *connection, const char *upload_data, size_t *upload_data_size, void **con_cls)
+static enum MHD_Result
+upload_req_handler(struct MHD_Connection *connection, const char *upload_data, size_t *upload_data_size, void **con_cls)
 {
     enum MHD_Result result;
 
@@ -621,12 +623,13 @@ static enum MHD_Result upload_req_handler(struct MHD_Connection *connection, con
  * Returns: MHD_Result
  *
  */
-static enum MHD_Result ahc_echo(void *cls,
-                                struct MHD_Connection *connection,
-                                const char *url,
-                                const char *method,
-                                const char *version,
-                                const char *upload_data, size_t *upload_data_size, void **con_cls)
+static enum MHD_Result
+ahc_echo(void *cls,
+         struct MHD_Connection *connection,
+         const char *url,
+         const char *method,
+         const char *version,
+         const char *upload_data, size_t *upload_data_size, void **con_cls)
 {
     char file_path[64];
     char resp_str_buffer[128];
@@ -661,7 +664,7 @@ static enum MHD_Result ahc_echo(void *cls,
         }
         else if (strcmp(url, "/config") == 0)
         {
-            sprintf(resp_str_buffer, "{\"file_max_byte\": %ld, \"file_expire\": %ld}", file_max_byte, file_expire);
+            sprintf(resp_str_buffer, "{\"file_max_byte\": %d, \"file_expire\": %d}", file_max_byte, file_expire);
             return response_json(connection, resp_str_buffer);
         }
         else
@@ -711,7 +714,7 @@ void test_FileNodeOperations()
     }
 
     // Serialize the list
-    if (serializeFileNodeList() != 0)
+    if (serialize_FileNodeList() != 0)
     {
         fprintf(stderr, "Serialization failed\n");
     }
@@ -720,7 +723,7 @@ void test_FileNodeOperations()
     free_FileNode_list();
 
     // deserialization test
-    deserializeFileNodeList();
+    deserialize_FileNodeList();
     printf("file node off: %d\nmax: %d\nhead: %s\n", FileNode_off, FileNode_max, FileNodeHead->file_name);
     free_FileNode_list();
 }
@@ -745,12 +748,11 @@ int main(int argc, char *const *argv)
     // initialize global config parameter
     if (config_initialize() == 1)
     {
-        perror("config file load error");
         return 1;
     }
 
     // initialize old file node list
-    deserializeFileNodeList();
+    deserialize_FileNodeList();
 
 #ifdef test
     printf("!!! TEST MODE: to switch to the production mode, comment out the line '#define test 1'\n\n");
@@ -770,7 +772,7 @@ int main(int argc, char *const *argv)
         return 1;
     }
 
-    printf("* Server started. Press enter to stop.\n\n");
+    printf("* Server started at http://localhost:%s. Press enter to stop.\n\n", argv[1]);
 
     // Create the worker thread
     if (pthread_create(&tid, NULL, cleaner_worker, NULL) != 0)
