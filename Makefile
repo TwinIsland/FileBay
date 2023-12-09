@@ -17,8 +17,13 @@ $(EXEC): $(OBJ)
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# nobuild executable
+nobuild:
+	$(CC) nobuild.c -o nobuild
+
 # Clean target
 clean:
 	rm -f $(OBJ) $(EXEC)
+	rm -f nobuild
 
 .PHONY: all clean

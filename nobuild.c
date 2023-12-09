@@ -17,6 +17,19 @@ void build_server()
     INFO("End building server.c");
 }
 
+void install_dependency()
+{
+    Cstr tool_path = "./INSTALL";
+    INFO("try installing dependency");
+
+#ifndef _WIN32
+    CMD("chmod", "+x", tool_path);
+    CMD(tool_path);
+#else
+    ERRO("not support auto install script for Windows, please install dependecy manually");
+#endif
+}
+
 int main(int argc, char **argv)
 {
     GO_REBUILD_URSELF(argc, argv);
@@ -24,21 +37,33 @@ int main(int argc, char **argv)
     switch (argc)
     {
     case 1:
-        build_server();
-        break;
+        goto print_usgae;
 
     case 2:
         if (ENDS_WITH(argv[1], "clean"))
         {
             RM("server");
             RM("server.o");
-        } else {
-            goto print_usgae;
         }
+        else if (ENDS_WITH(argv[1], "install"))
+        {
+            install_dependency();
+        }
+        else if (ENDS_WITH(argv[1], "build"))
+        {
+            build_server();
+        }
+        else
+            goto print_usgae;
+
         break;
     default:
-print_usgae:
-        printf("usage: %s <clean>\n", argv[0]);
+    print_usgae:
+        printf("Usage: %s <command>\nCommands:\n \
+        build         - Build server executable\n \
+        install       - Install dependencies\n \
+        clean         - Clean build files\n",
+               argv[0]);
     }
 
     return 0;
