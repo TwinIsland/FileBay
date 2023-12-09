@@ -19,7 +19,6 @@
 
 static int thread_should_stop = 0;
 static pthread_t tid;
-static int cur_file_count = 0;
 static struct MHD_Daemon *d;
 
 // config parameter
@@ -115,7 +114,6 @@ int add_FileNode(FileNode cur)
 
     // Copy the new node to the heap
     memcpy(FileNodeHead + FileNode_off, &cur, sizeof(FileNode));
-    cur_file_count++;
     FileNode_off++;
     return 0;
 }
