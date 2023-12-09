@@ -45,7 +45,7 @@ make
 ./server PORT
 ```
 
-If `Make` is not installed on your system, consider using the [nobuild toolkit](https://github.com/tsoding/nobuild). Essentially, it functions as a C-driven alternative to Make, offering support for both POSIX-compliant systems and Windows environments using MSVC.
+If `Make` is not installed on your system, consider using the [nobuild toolkit](https://github.com/tsoding/nobuild). Essentially, it functions as a C-driven alternative to Make, offering support for both POSIX-compliant systems and Windows environments using MSVC. To use it, simply download [nobuild.h](https://github.com/tsoding/nobuild/blob/master/nobuild.h) and put it under the project folder, then:
 
 + `$ cc nobuild.c -o nobuild` on POSIX systems
 + `$ cl.exe nobuild.c` on Windows with MSVC

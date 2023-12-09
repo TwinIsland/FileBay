@@ -17,6 +17,7 @@ server
 test.html
 dump.bin
 nobuild
+nobuild.h
 nobuild.old
 
 # folder create in run time
