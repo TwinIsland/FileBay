@@ -13,6 +13,7 @@
 
 # compiled and executable
 server
+server_test
 server_debug
 *.o
 test.html
