@@ -53,3 +53,12 @@ If `Make` is not installed on your system, consider using the [nobuild toolkit](
 + `$ cl.exe nobuild.c` on Windows with MSVC
 
 Then, Run the build: `$ ./nobuild`
+
+## Debug 🐞
+To access comprehensive runtime information, compile the executable in debug mode by running the following command:
+
+```bash
+make debug
+
+./server_debug
+```
