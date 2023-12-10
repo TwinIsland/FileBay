@@ -19,7 +19,7 @@
 #define CONFIG_FILE "CONFIG"
 #define CONFIG_NUM_EXPECT 7
 
-#define FileNodePerMalloc 5
+#define FILENODEPERMALLOC 5
 #define POSTBUFFERSIZE 512
 
 #define DIR_BUFFER_SIZE 128
@@ -113,27 +113,27 @@ int add_FileNode(FileNode cur)
     // Allocate memory if not already done
     if (!FileNodeList)
     {
-        FileNodeList = malloc(sizeof(FileNode) * FileNodePerMalloc);
+        FileNodeList = malloc(sizeof(FileNode) * FILENODEPERMALLOC);
         if (!FileNodeList)
         {
             perror("Failed to allocate memory for FileNodeList");
             return 1;
         }
         FileNode_off = 0;
-        FileNode_max = FileNodePerMalloc;
+        FileNode_max = FILENODEPERMALLOC;
     }
 
     // Check if there is space for a new node
     if (FileNode_off >= FileNode_max)
     {
-        FileNode *temp = realloc(FileNodeList, sizeof(FileNode) * (FileNode_max + FileNodePerMalloc));
+        FileNode *temp = realloc(FileNodeList, sizeof(FileNode) * (FileNode_max + FILENODEPERMALLOC));
         if (!temp)
         {
             perror("Failed to reallocate memory for FileNodeList");
             return 1;
         }
         FileNodeList = temp;
-        FileNode_max += FileNodePerMalloc;
+        FileNode_max += FILENODEPERMALLOC;
     }
 
     // Copy the new node to the heap
