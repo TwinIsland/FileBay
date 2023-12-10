@@ -20,6 +20,71 @@ function upload_reload() {
 
     var dropZone = document.getElementById('drop_zone_container');
 
+    function showUploadSuccess(code) {
+        var dropZoneContainer = document.getElementById('drop_zone_container');
+        var contentContainer = document.getElementsByClassName('content-container')[0]
+        if (dropZoneContainer) {
+            // Remove the drop zone container
+            dropZoneContainer.parentNode.removeChild(dropZoneContainer);
+
+            var htmlContent = `
+            <hr>
+            <h1 style="color:green">Congratulation!</h1>
+            <p>Your file has been upload successfully!</p>
+            <p>Use the code <span style="font-size: 20px;font-weight: bolder;">${code}</span> to pick it up</p>
+            <img src="https://cirno.me/usr/themes/VOID/assets/suica_chara.gif">
+            <hr>
+            <p>Power By <a href="https://cirno.me">Cirno.me</a></p>
+            `;
+
+            contentContainer.innerHTML += htmlContent;
+        }
+    }
+
+    function showUploadFailed(msg) {
+        var dropZoneContainer = document.getElementById('drop_zone_container');
+        var contentContainer = document.getElementsByClassName('content-container')[0]
+        if (dropZoneContainer) {
+            // Remove the drop zone container
+            dropZoneContainer.parentNode.removeChild(dropZoneContainer);
+
+            var htmlContent = `
+            <hr>
+            <h1 style="color:red">Errorrr!</h1>
+            <p>Failed to upload due to: <span style="font-size: 20px;font-weight: bolder;">${msg}</span></p>
+            <img src="https://cirno.me/usr/themes/VOID/assets/suica_chara.gif">
+            <hr>
+            <p>Power By <a href="https://cirno.me">Cirno.me</a></p>
+            `;
+
+            contentContainer.innerHTML += htmlContent;
+        }
+    }
+
+    function upload_handler(formData) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '/upload', true);
+
+        xhr.onload = function () {
+            if (xhr.status === 200) {
+                // Handle the response here
+                var response = JSON.parse(xhr.responseText);
+                if (response.status === "ok") {
+                    showUploadSuccess(response.code)
+                } else {
+                    if (!response.msg) {
+                        response.msg = "unknown reason";
+                    }
+                    showUploadFailed(response.msg)
+                }
+            } else {
+                alert('Upload error!');
+            }
+        };
+
+        xhr.send(formData);
+    }
+
     dropZone.addEventListener('dragover', function (e) {
         e.preventDefault();
         e.stopPropagation();
@@ -36,23 +101,27 @@ function upload_reload() {
         e.preventDefault();
         e.stopPropagation();
         dropZone.classList.remove('over');
+        var formData = new FormData();
+
 
         var files = e.dataTransfer.files;
         if (files.length > 0) {
-            var formData = new FormData();
-            formData.append('file', files[0]);
+            droppedFile = files[0]; // Store the dropped file
+            const fileNameDisplay = document.getElementById('fileNameDisplay');
+            formData.append('file', droppedFile); // Use the dropped file
 
-            var xhr = new XMLHttpRequest();
-            xhr.open('POST', '/', true);
-            xhr.onload = function () {
-                if (xhr.status === 200) {
-                    alert('File uploaded successfully!');
-                } else {
-                    alert('Upload error!');
-                }
-            };
-            xhr.send(formData);
+            upload_handler(formData);
         }
+    });
+
+
+    document.getElementById('uploadForm').addEventListener('submit', function (e) {
+        e.preventDefault(); // Prevent the default form submission
+
+        var formData = new FormData();
+        formData.append('file', this.file.files[0]);
+
+        upload_handler(formData);
     });
 }
 
