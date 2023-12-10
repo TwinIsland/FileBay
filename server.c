@@ -919,6 +919,22 @@ int main(int argc, char *const *argv)
         return 1;
     }
 
+    // create storage_dir if not exist
+    struct stat st = {0};
+    
+    if (stat(storage_dir, &st) == -1)
+    {
+        if (mkdir(storage_dir, 0700) == -1)
+        { // 0700 sets read, write, and execute permissions for the owner
+            perror("Error creating directory");
+            return 1;
+        }
+        else
+        {
+            printf("Directory created: %s\n", storage_dir);
+        }
+    }
+
     // initialize old file node list
     deserialize_FileNodeList();
 
