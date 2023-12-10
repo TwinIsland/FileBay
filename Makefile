@@ -19,10 +19,13 @@ $(EXEC): $(OBJ)
 
 #debug
 debug:
-	$(CC) $(CFLAGS) -g server.c -o server_debug $(LDFLAGS)
+	$(CC) $(CFLAGS) -g server.c -o server_debug $(LDFLAGS) -DDEBUG
 
 test:
-	$(CC) $(CFLAGS) test.c -o test $(LDFLAGS)
+	$(CC) $(CFLAGS) -g server.c -o server_test $(LDFLAGS) -DTEST
+
+# test:
+# 	$(CC) $(CFLAGS) test.c -o test $(LDFLAGS)
 
 # nobuild executable
 nobuild:
