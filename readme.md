@@ -1,4 +1,4 @@
-> under developing...
+> beta release !
 
 # FileBay 🥳
 
@@ -21,17 +21,20 @@ Please ensure these are installed on your system for the software to function co
 make install
 ```
 
-## Run 🐎
+## Run 🦉
 
 **(Optional)** change the `CONFIG` to meet your demand:
 
 ```bash
+# DO NOT INCLUDE COMMENT!
+
 file_max_byte:10485760   # Maximum file size, in byte
 file_expire:1440         # Worker will delete the file after this time, in minute
 worker_period:720        # Worker running period, in minute
 storage_dir:./files      # Where should uploaded files be stored
 dump_dist:./dump.bin	 # Where should the serialized binary be stored
-max_file_count:100       # Max file number serve
+max_file_count:100       # Max file number served
+max_client:2             # Max uptime client supported
 ```
 
 Then, compile and run:

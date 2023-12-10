@@ -10,16 +10,16 @@
 #include <dirent.h>
 #include <signal.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 
 // comment in out in production environment
 // #define debug 1
 // #define test 1
 
 #define CONFIG_FILE "CONFIG"
-#define CONFIG_NUM_EXPECT 6
+#define CONFIG_NUM_EXPECT 7
 
 #define FileNodePerMalloc 5
-#define MAXCLIENTS 2
 #define POSTBUFFERSIZE 512
 
 #define DIR_BUFFER_SIZE 128
@@ -28,10 +28,10 @@
 static int thread_should_stop = 0;
 static pthread_t tid;
 static struct MHD_Daemon *d;
-static unsigned int nr_of_uploading_clients = 0;
+static int nr_of_uploading_clients = 0;
 
 // config parameter
-static int file_max_byte, file_expire, worker_period_minute, max_file_count;
+static int file_max_byte, file_expire, worker_period_minute, max_file_count, max_client;
 static char storage_dir[DIR_BUFFER_SIZE], dump_dist[DIR_BUFFER_SIZE];
 
 // version parameter, use to check serialzation version conflict
@@ -51,7 +51,6 @@ typedef struct ConnectionInfo
 {
     FILE *fp;
     char file_dir[DIR_BUFFER_SIZE];
-    size_t total_size;
     struct MHD_PostProcessor *post_processor;
     FileNode node;
     size_t upload_byte;
@@ -59,9 +58,10 @@ typedef struct ConnectionInfo
     char err_msg[STD_MSG_BUFFER_SIZE];
 } ConnectionInfo;
 
-static FileNode *FileNodeHead;
+static FileNode *FileNodeList;
 static int FileNode_off = 0;
 static int FileNode_max = 0;
+static int FileNode_num = 0; // it may not equal to FileNode_off due to the dirty bit (is_del) design
 
 /*
  * helper functions for managing file node list
@@ -100,12 +100,12 @@ FileNode create_FileNode(const char *file_name, size_t file_size)
 int add_FileNode(FileNode cur)
 {
     // Allocate memory if not already done
-    if (!FileNodeHead)
+    if (!FileNodeList)
     {
-        FileNodeHead = malloc(sizeof(FileNode) * FileNodePerMalloc);
-        if (!FileNodeHead)
+        FileNodeList = malloc(sizeof(FileNode) * FileNodePerMalloc);
+        if (!FileNodeList)
         {
-            perror("Failed to allocate memory for FileNodeHead");
+            perror("Failed to allocate memory for FileNodeList");
             return 1;
         }
         FileNode_off = 0;
@@ -115,34 +115,54 @@ int add_FileNode(FileNode cur)
     // Check if there is space for a new node
     if (FileNode_off >= FileNode_max)
     {
-        FileNode *temp = realloc(FileNodeHead, sizeof(FileNode) * (FileNode_max + FileNodePerMalloc));
+        FileNode *temp = realloc(FileNodeList, sizeof(FileNode) * (FileNode_max + FileNodePerMalloc));
         if (!temp)
         {
-            perror("Failed to reallocate memory for FileNodeHead");
+            perror("Failed to reallocate memory for FileNodeList");
             return 1;
         }
-        FileNodeHead = temp;
+        FileNodeList = temp;
         FileNode_max += FileNodePerMalloc;
     }
 
     // Copy the new node to the heap
-    memcpy(FileNodeHead + FileNode_off, &cur, sizeof(FileNode));
+    memcpy(FileNodeList + FileNode_off, &cur, sizeof(FileNode));
+    FileNode_num++;
     FileNode_off++;
     return 0;
 }
 
-void free_FileNodeList()
+FileNode *get_FileNode(unsigned int pwd)
 {
-    if (FileNodeHead)
+    if (FileNodeList)
     {
         for (int i = 0; i < FileNode_off; ++i)
         {
-            free(FileNodeHead[i].file_name);
+            if (FileNodeList[i].pwd == pwd)
+            {
+                if (FileNodeList[i].is_del)
+                    return NULL;
+
+                return (FileNode *)&FileNodeList[i];
+            }
+        }
+    }
+    return NULL;
+}
+
+void free_FileNodeList()
+{
+    if (FileNodeList)
+    {
+        for (int i = 0; i < FileNode_off; ++i)
+        {
+            free(FileNodeList[i].file_name);
         }
 
-        free(FileNodeHead);
+        free(FileNodeList);
 
-        FileNodeHead = NULL;
+        FileNodeList = NULL;
+        FileNode_num = 0;
         FileNode_off = 0;
     }
 }
@@ -161,22 +181,22 @@ int serialize_FileNodeList()
 
     for (int i = 0; i < FileNode_off; i++)
     {
-        if (FileNodeHead[i].is_del)
+        if (FileNodeList[i].is_del)
         {
             // ignore if the FileNode marked as delete
             continue;
         }
         // Serialize id, file_size, expire_time as before
-        fwrite(&FileNodeHead[i].id, sizeof(int), 1, file);
-        fwrite(&FileNodeHead[i].is_del, sizeof(int), 1, file);
-        fwrite(&FileNodeHead[i].file_size, sizeof(size_t), 1, file);
-        fwrite(&FileNodeHead[i].expire_time, sizeof(time_t), 1, file);
-        fwrite(&FileNodeHead[i].pwd, sizeof(unsigned int), 1, file);
+        fwrite(&FileNodeList[i].id, sizeof(int), 1, file);
+        fwrite(&FileNodeList[i].is_del, sizeof(int), 1, file);
+        fwrite(&FileNodeList[i].file_size, sizeof(size_t), 1, file);
+        fwrite(&FileNodeList[i].expire_time, sizeof(time_t), 1, file);
+        fwrite(&FileNodeList[i].pwd, sizeof(unsigned int), 1, file);
 
         // Serialize file_name
-        size_t name_length = strlen(FileNodeHead[i].file_name) + 1; // +1 for null terminator
+        size_t name_length = strlen(FileNodeList[i].file_name) + 1; // +1 for null terminator
         fwrite(&name_length, sizeof(size_t), 1, file);
-        fwrite(FileNodeHead[i].file_name, sizeof(char), name_length, file);
+        fwrite(FileNodeList[i].file_name, sizeof(char), name_length, file);
     }
 
     fclose(file);
@@ -236,7 +256,7 @@ int config_initialize()
         return 1;
     }
 
-    char line[128];
+    char line[STD_MSG_BUFFER_SIZE];
 
     size_t config_count = 0;
 
@@ -263,6 +283,10 @@ int config_initialize()
             config_count++;
         }
         else if (sscanf(line, "max_file_count:%d", &max_file_count) == 1)
+        {
+            config_count++;
+        }
+        else if (sscanf(line, "max_client:%d", &max_client) == 1)
         {
             config_count++;
         }
@@ -295,7 +319,7 @@ void *cleaner_worker()
 #ifdef debug
         printf("(DEBUG) cleaner worker wake up\n");
 #endif
-        if (FileNodeHead)
+        if (FileNodeList)
         {
             time_t current_time;
             time(&current_time);
@@ -305,21 +329,22 @@ void *cleaner_worker()
             {
 #ifdef debug
                 printf("(DEBUG) file_id %d file_name %s expire %ld current %ld is_del %d\n",
-                       FileNodeHead[i].id, FileNodeHead[i].file_name, FileNodeHead[i].expire_time, current_time, FileNodeHead[i].is_del);
+                       FileNodeList[i].id, FileNodeList[i].file_name, FileNodeList[i].expire_time, current_time, FileNodeList[i].is_del);
 #endif
-                if (FileNodeHead[i].is_del == 0 && FileNodeHead[i].expire_time <= current_time)
+                if (FileNodeList[i].is_del == 0 && FileNodeList[i].expire_time <= current_time)
                 {
-                    snprintf(filepath, sizeof(filepath), "%s/%d", storage_dir, FileNodeHead[i].id);
+                    snprintf(filepath, sizeof(filepath), "%s/%d", storage_dir, FileNodeList[i].id);
 
                     if (unlink(filepath) != 0)
                     {
-                        fprintf(stderr, "(Worker) Error deleting file %s\n", FileNodeHead[i].file_name);
+                        fprintf(stderr, "(Worker) Error deleting file %s\n", FileNodeList[i].file_name);
                     }
                     else
                     {
-                        printf("(Worker) removing expired (%ld) file: %s\n", current_time - FileNodeHead[i].expire_time, FileNodeHead[i].file_name);
+                        printf("(Worker) removing expired (%ld) file: %s\n", current_time - FileNodeList[i].expire_time, FileNodeList[i].file_name);
                     }
-                    FileNodeHead[i].is_del = 1;
+                    FileNode_num--;
+                    FileNodeList[i].is_del = 1;
                 }
             }
         }
@@ -422,6 +447,17 @@ body_compress(void **buf,
 }
 
 static enum MHD_Result
+response_err(struct MHD_Connection *connection, char *invalidRequestMessage, int err_code)
+{
+    struct MHD_Response *response = MHD_create_response_from_buffer(strlen(invalidRequestMessage),
+                                                                    (void *)invalidRequestMessage,
+                                                                    MHD_RESPMEM_PERSISTENT);
+    int ret = MHD_queue_response(connection, err_code, response);
+    MHD_destroy_response(response);
+    return ret;
+}
+
+static enum MHD_Result
 response_HTML(struct MHD_Connection *connection, const char *file_path)
 {
     struct MHD_Response *response;
@@ -502,20 +538,75 @@ response_HTML(struct MHD_Connection *connection, const char *file_path)
     return ret;
 }
 
+static enum MHD_Result
+response_file(struct MHD_Connection *connection, unsigned int pwd)
+{
+    int fd;
+    struct stat sbuf;
+    FileNode *target;
+    char file_path[DIR_BUFFER_SIZE];
+    char content_disposition[DIR_BUFFER_SIZE];
+
+    if (pwd < 100000 || pwd > 999999)
+    {
+        printf("GET(X): /file/%d\n", pwd);
+        return response_err(connection, "Invalid Request", MHD_HTTP_BAD_REQUEST);
+    }
+
+    target = get_FileNode(pwd);
+
+    if (target)
+    {
+        sprintf(file_path, "%s/%d", storage_dir, target->id);
+    }
+    else
+    {
+        // request file no exist
+        return response_err(connection, "File not found", MHD_HTTP_NOT_FOUND);
+    }
+
+    fd = open(file_path, O_RDONLY);
+    if (fd < 0)
+        return MHD_NO; // Failed to open file
+
+    if (fstat(fd, &sbuf) < 0)
+    {
+        close(fd);
+        return MHD_NO; // Failed to stat file
+    }
+
+    struct MHD_Response *response;
+    response = MHD_create_response_from_fd_at_offset64(sbuf.st_size, fd, 0);
+    if (response == NULL)
+    {
+        close(fd);
+        return MHD_NO; // Failed to create response
+    }
+
+    snprintf(content_disposition, sizeof(content_disposition),
+             "attachment; filename=\"%s\"", target->file_name);
+
+    MHD_add_response_header(response, "Content-Disposition", content_disposition);
+
+    int ret = MHD_queue_response(connection, MHD_HTTP_OK, response);
+    MHD_destroy_response(response);
+    return ret;
+}
+
 /*
  * Response with json, be aware that parameter 'content' should always be on stack
  * Returns: MHD_Result
  *
  */
 static enum MHD_Result
-response_json(struct MHD_Connection *connection, char *content)
+response_json(struct MHD_Connection *connection, char *content, int status_code)
 {
     struct MHD_Response *response = MHD_create_response_from_buffer(strlen(content), (void *)content, MHD_RESPMEM_MUST_COPY);
     if (response == NULL)
         return MHD_NO;
 
-    MHD_add_response_header(response, "Content-Type", "application/json");
-    int ret = MHD_queue_response(connection, MHD_HTTP_OK, response);
+    MHD_add_response_header(response, MHD_HTTP_HEADER_CONTENT_TYPE, "application/json");
+    int ret = MHD_queue_response(connection, status_code, response);
     MHD_destroy_response(response);
     return ret;
 }
@@ -546,6 +637,22 @@ upload_req_callback(void *coninfo_cls, enum MHD_ValueKind kind, const char *key,
 
     if (!con_info->fp)
     {
+        // check if limitation satisfied
+        if (nr_of_uploading_clients >= max_client)
+        {
+            con_info->is_err = 1;
+            sprintf(con_info->err_msg, "Server is busy");
+            return MHD_NO;
+        }
+
+        if (max_file_count < FileNode_num + 1)
+        {
+            con_info->is_err = 1;
+            sprintf(con_info->err_msg, "Currently Unavailable");
+            return MHD_NO;
+        }
+
+        // initialize new file node
         new_file_node = create_FileNode(filename, 0);
         con_info->node = new_file_node;
 
@@ -572,7 +679,7 @@ upload_req_callback(void *coninfo_cls, enum MHD_ValueKind kind, const char *key,
         if (con_info->upload_byte > (size_t)file_max_byte)
         {
             con_info->is_err = 1;
-            sprintf(con_info->err_msg, "file too large");
+            sprintf(con_info->err_msg, "File too large");
             printf("Post(X): file too large!\n");
             return MHD_NO;
         }
@@ -614,16 +721,10 @@ static enum MHD_Result
 upload_req_handler(struct MHD_Connection *connection, const char *upload_data, size_t *upload_data_size, void **con_cls)
 {
     char ret_buffer[STD_MSG_BUFFER_SIZE];
+    ConnectionInfo *con_info;
 
     if (NULL == *con_cls)
     {
-        ConnectionInfo *con_info;
-        if (nr_of_uploading_clients >= MAXCLIENTS)
-        {
-            sprintf(ret_buffer, "{\"status\":\"fail\", \"msg\": \"%s\"}", "the server is busy");
-            return response_json(connection, ret_buffer);
-        }
-
         con_info = malloc(sizeof(ConnectionInfo));
 
         if (NULL == con_info)
@@ -647,7 +748,7 @@ upload_req_handler(struct MHD_Connection *connection, const char *upload_data, s
         return MHD_YES;
     }
 
-    ConnectionInfo *con_info = *con_cls;
+    con_info = *con_cls;
     if (0 != *upload_data_size)
     {
         MHD_post_process(con_info->post_processor, upload_data,
@@ -664,19 +765,24 @@ upload_req_handler(struct MHD_Connection *connection, const char *upload_data, s
         }
 
         /* Now it is safe to open and inspect the file before calling send_page with a response */
-        if (con_info->is_err && con_info->file_dir)
+        if (con_info->is_err)
         {
-            printf("unlink file due to: %s\n", con_info->err_msg);
-            unlink(con_info->file_dir);
             sprintf(ret_buffer, "{\"status\":\"fail\", \"msg\": \"%s\"}", con_info->err_msg);
+            if (con_info->file_dir && con_info->file_dir[0] != '\0')
+            {
+                // unlink file if it exists
+                printf("POST(X): unlink file '%s' due to: %s\n", con_info->file_dir, con_info->err_msg);
+                unlink(con_info->file_dir);
+            }
         }
         else
         {
+            printf("POST: upload file %s with size: %ld\n", con_info->file_dir, con_info->upload_byte);
             add_FileNode(con_info->node);
             sprintf(ret_buffer, "{\"status\":\"ok\", \"code\": %d}", con_info->node.pwd);
         }
 
-        return response_json(connection, ret_buffer);
+        return response_json(connection, ret_buffer, MHD_HTTP_OK);
     }
 }
 
@@ -694,7 +800,7 @@ ahc_echo(void *cls,
          const char *upload_data, size_t *upload_data_size, void **con_cls)
 {
     char file_path[DIR_BUFFER_SIZE];
-    char resp_str_buffer[STD_MSG_BUFFER_SIZE];
+    char ret_buffer[STD_MSG_BUFFER_SIZE];
 
     (void)cls;     /* Unused. Silent compiler warning. */
     (void)version; /* Unused. Silent compiler warning. */
@@ -708,6 +814,7 @@ ahc_echo(void *cls,
             2. make css, js, pages folder as static
             3. server all files in storage_dir
             4. /max_size: return the max file size limit
+            5. /file/#pwd: response file with spec pwd
         */
         if (!*con_cls)
         {
@@ -726,8 +833,12 @@ ahc_echo(void *cls,
         }
         else if (strcmp(url, "/config") == 0)
         {
-            sprintf(resp_str_buffer, "{\"file_max_byte\": %d, \"file_expire\": %d}", file_max_byte, file_expire);
-            return response_json(connection, resp_str_buffer);
+            sprintf(ret_buffer, "{\"file_max_byte\": %d, \"file_expire\": %d}", file_max_byte, file_expire);
+            return response_json(connection, ret_buffer, MHD_HTTP_OK);
+        }
+        else if (strncmp(url, "/file", 5) == 0)
+        {
+            return response_file(connection, atoi(url + 6));
         }
         else
         {
@@ -743,15 +854,10 @@ ahc_echo(void *cls,
         /*
             Post request handler
             1. /upload: file uploading router
-            2. /file: get file given file id
         */
         if (strcmp(url, "/upload") == 0)
         {
             return upload_req_handler(connection, upload_data, upload_data_size, con_cls);
-        }
-        if (strcmp(url, "/file") == 0)
-        {
-            // TODO: finish it
         }
 
         // invalid POST, reponse index.html to handle such situation
@@ -786,7 +892,7 @@ void test_FileNodeOperations()
 
     // deserialization test
     deserialize_FileNodeList();
-    printf("file node off: %d\nmax: %d\nhead: %s\n", FileNode_off, FileNode_max, FileNodeHead->file_name);
+    printf("file node off: %d\nmax: %d\nhead: %s\n", FileNode_off, FileNode_max, FileNodeList->file_name);
     free_FileNodeList();
 }
 
