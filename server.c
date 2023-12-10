@@ -16,10 +16,6 @@
 
 #include "hashmap.h"
 
-// comment it out in production environment
-// #define DEBUG 1
-// #define TEST 1
-
 #define CONFIG_FILE "CONFIG"
 #define CONFIG_NUM_EXPECT 7
 
