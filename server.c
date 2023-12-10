@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#define HASHMAP_IMPLEMENTATION
 
 #include <microhttpd.h>
 #include <stdio.h>
@@ -11,8 +12,11 @@
 #include <signal.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <errno.h>
 
-// comment in out in production environment
+#include "hashmap.h"
+
+// comment it out in production environment
 // #define DEBUG 1
 // #define TEST 1
 
@@ -72,6 +76,7 @@ static FileNode *FileNodeList;
 static int FileNode_off = 0;
 static int FileNode_max = 0;
 static int FileNode_num = 0; // it may not equal to FileNode_off due to the dirty bit (is_del) design
+static Hashmap *FileNode_hashmap;
 
 /*
  * helper functions for managing file node list
@@ -137,6 +142,8 @@ int add_FileNode(FileNode cur)
 
     // Copy the new node to the heap
     memcpy(FileNodeList + FileNode_off, &cur, sizeof(FileNode));
+    hashmap_insert(FileNode_hashmap, cur.pwd, (void *)(FileNodeList + FileNode_off));
+    debug("insert key: %d value: %p", cur.pwd, FileNodeList + FileNode_off);
     FileNode_num++;
     FileNode_off++;
     return 0;
@@ -144,6 +151,20 @@ int add_FileNode(FileNode cur)
 
 FileNode *get_FileNode(unsigned int pwd)
 {
+    // attempt to get from hashmap, use brute force if collide
+    FileNode *exp;
+
+    exp = (FileNode *)hashmap_search(FileNode_hashmap, pwd);
+    if (exp && exp->pwd == pwd)
+    {
+        debug("hit the hash map!");
+        return exp;
+    } else {
+        return NULL;
+    }
+
+    debug("not hit, use brute force");
+
     if (FileNodeList)
     {
         for (int i = 0; i < FileNode_off; ++i)
@@ -160,7 +181,7 @@ FileNode *get_FileNode(unsigned int pwd)
     return NULL;
 }
 
-void free_FileNodeList()
+void freeFileNodeList()
 {
     if (FileNodeList)
     {
@@ -214,6 +235,10 @@ int serialize_FileNodeList()
     return 0; // Success
 }
 
+/*
+ * deserialize the local dump, and initialize the FileNodeList
+ *
+ */
 int deserialize_FileNodeList()
 {
     FILE *file = fopen(dump_dist, "rb");
@@ -336,7 +361,7 @@ void *cleaner_worker()
             for (int i = 0; i < FileNode_off; ++i)
             {
                 debug("file_id %d file_name %s expire %ld current %ld is_del %d",
-                       FileNodeList[i].id, FileNodeList[i].file_name, FileNodeList[i].expire_time, current_time, FileNodeList[i].is_del);
+                      FileNodeList[i].id, FileNodeList[i].file_name, FileNodeList[i].expire_time, current_time, FileNodeList[i].is_del);
 
                 if (FileNodeList[i].is_del == 0 && FileNodeList[i].expire_time <= current_time)
                 {
@@ -344,7 +369,7 @@ void *cleaner_worker()
 
                     if (unlink(filepath) != 0)
                     {
-                        fprintf(stderr, "(Worker) Error deleting file %s\n", FileNodeList[i].file_name);
+                        fprintf(stderr, "(Worker) Error deleting file %s: %s\n", FileNodeList[i].file_name, strerror(errno));
                     }
                     else
                     {
@@ -352,6 +377,12 @@ void *cleaner_worker()
                     }
                     FileNode_num--;
                     FileNodeList[i].is_del = 1;
+
+                    // ensure the file to delete match and ensure we can assert item not exist
+                    // if cannot find its key in hashmap.
+                    FileNode *target = hashmap_search(FileNode_hashmap, FileNodeList[i].pwd);
+                    if (target && target->pwd == FileNodeList[i].pwd)
+                        hashmap_delete(FileNode_hashmap, FileNodeList[i].pwd);
                 }
             }
         }
@@ -372,12 +403,12 @@ void *cleaner_worker()
 void terminate_handler()
 {
     thread_should_stop = 1;
-    pthread_detach(tid);
     printf("cleaner thread end\n");
     MHD_stop_daemon(d);
     printf("server stoped\n");
     serialize_FileNodeList();
-    free_FileNodeList();
+    freeFileNodeList();
+    freeHashmap(FileNode_hashmap);
     printf("bye\n");
     exit(0);
 }
@@ -463,7 +494,7 @@ response_err(struct MHD_Connection *connection, char *invalidRequestMessage, int
 }
 
 static enum MHD_Result
-response_HTML(struct MHD_Connection *connection, const char *file_path)
+response_resource(struct MHD_Connection *connection, const char *file_path)
 {
     struct MHD_Response *response;
     enum MHD_Result ret;
@@ -473,7 +504,7 @@ response_HTML(struct MHD_Connection *connection, const char *file_path)
     size_t file_size;
     char *file_buf;
 
-    printf("GET: %s\n", file_path);
+    debug("GET: %s", file_path);
 
     // load response content
     file = fopen(file_path, "rb");
@@ -554,7 +585,7 @@ response_file(struct MHD_Connection *connection, unsigned int pwd)
 
     if (pwd < 100000 || pwd > 999999)
     {
-        printf("GET(X): /file/%d\n", pwd);
+        debug("GET(X): /file/%d\n", pwd);
         return response_err(connection, "Invalid Request", MHD_HTTP_BAD_REQUEST);
     }
 
@@ -678,13 +709,12 @@ upload_req_callback(void *coninfo_cls, enum MHD_ValueKind kind, const char *key,
     {
         con_info->upload_byte += size;
 
-        debug("upload: %ld", con_info->upload_byte);
+        // debug("upload: %ld", con_info->upload_byte);
 
-        if (con_info->upload_byte > (size_t)file_max_byte)
+        if (con_info->is_err || con_info->upload_byte > (size_t)file_max_byte)
         {
             con_info->is_err = 1;
             sprintf(con_info->err_msg, "File too large");
-            printf("Post(X): file too large!\n");
             return MHD_NO;
         }
 
@@ -847,11 +877,11 @@ ahc_echo(void *cls,
         else
         {
             // invalid GET, reponse index.html to handle such situation
-            printf("GET(X): %s\n", url);
+            debug("GET(X): %s", url);
             strcpy(file_path, "./index.html");
         }
 
-        return response_HTML(connection, file_path);
+        return response_resource(connection, file_path);
     }
     else if (strcmp(method, "POST") == 0)
     {
@@ -867,41 +897,50 @@ ahc_echo(void *cls,
         // invalid POST, reponse index.html to handle such situation
         printf("POST(X): %s\n", file_path);
         strcpy(file_path, "./index.html");
-        return response_HTML(connection, "./index.html");
+        return response_resource(connection, "./index.html");
     }
 
     return MHD_NO; /* unexpected method */
 }
 
 /*
- * test case for file node list
+ * test case for hash collision
  *
  */
-void test_FileNodeOperations()
+void test_HashCollision(int test_num)
 {
-    // Adding 12 FileNodes
-    for (int i = 0; i < 12; i++)
+    int collide_count = 0;
+
+    // Initialize hashmap
+    FileNode_hashmap = createHashmap(test_num);
+
+    FileNode empty_filenode = create_FileNode("", 0);
+    unsigned int pwd;
+
+    for (int i = 0; i < test_num; i++)
     {
-        add_FileNode(create_FileNode("file", 128));
+        pwd = generate_rand_6digit();
+        collide_count += hashmap_insert(FileNode_hashmap, pwd, &empty_filenode);
     }
 
-    // Serialize the list
-    if (serialize_FileNodeList() != 0)
-    {
-        fprintf(stderr, "Serialization failed\n");
-    }
-
-    // Free the allocated memory
-    free_FileNodeList();
-
-    // deserialization test
-    deserialize_FileNodeList();
-    printf("file node off: %d\nmax: %d\nhead: %s\n", FileNode_off, FileNode_max, FileNodeList->file_name);
-    free_FileNodeList();
+    printf("total insert: %d, collide: %d\n", test_num, collide_count);
+    freeFileNodeList();
+    freeHashmap(FileNode_hashmap);
 }
 
 int main(int argc, char *const *argv)
 {
+
+#ifdef TEST
+    printf("!!! TEST MODE: to switch to the production mode, comment out the line '#define test 1'\n\n");
+    if (argc != 2) {
+        printf("usage: %s <test_num>\n", argv[0]);
+        return 0;
+    }
+    test_HashCollision(atoi(argv[1]));
+    return 0;
+#endif
+
 #ifdef DEBUG
     printf("!!! DEBUG MODE: to switch to the production mode, comment out the line '#define debug 1'\n\n");
 #endif
@@ -938,14 +977,11 @@ int main(int argc, char *const *argv)
         }
     }
 
+    // initialize the FileNode hashmap
+    FileNode_hashmap = createHashmap(max_file_count);
+
     // initialize old file node list
     deserialize_FileNodeList();
-
-#ifdef TEST
-    printf("!!! TEST MODE: to switch to the production mode, comment out the line '#define test 1'\n\n");
-    test_FileNodeOperations();
-    return 0;
-#endif
 
     // start server
     d = MHD_start_daemon(MHD_USE_AUTO | MHD_USE_INTERNAL_POLLING_THREAD | MHD_USE_ERROR_LOG,
@@ -968,7 +1004,8 @@ int main(int argc, char *const *argv)
         perror("Error creating thread\n");
         return EXIT_FAILURE;
     }
-    
+    pthread_detach(tid);
+
     (void)getchar(); // Wait for user input to terminate the server
 
     terminate_handler(-1);

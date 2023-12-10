@@ -21,6 +21,9 @@ $(EXEC): $(OBJ)
 debug:
 	$(CC) $(CFLAGS) -g server.c -o server_debug $(LDFLAGS)
 
+test:
+	$(CC) $(CFLAGS) test.c -o test $(LDFLAGS)
+
 # nobuild executable
 nobuild:
 	$(CC) nobuild.c -o nobuild
@@ -34,5 +37,6 @@ install:
 clean:
 	rm -f $(OBJ) $(EXEC)
 	rm -f nobuild
+	rm -f test
 
 .PHONY: all clean

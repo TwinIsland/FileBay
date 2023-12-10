@@ -96,10 +96,10 @@ function upload_reload() {
         // Check if file size exceeds the limit
         var file = formData.get('file');
         fetchConfig().then(config => {
-            if (config && file && file.size > config.file_max_byte) {
-                alert('File is too large');
-                return;
-            }
+            // if (config && file && file.size > config.file_max_byte) {
+            //     alert('File is too large');
+            //     return;
+            // }
 
             var xhr = new XMLHttpRequest();
             xhr.open('POST', '/upload', true);
