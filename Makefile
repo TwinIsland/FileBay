@@ -17,6 +17,10 @@ $(EXEC): $(OBJ)
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
+#debug
+debug:
+	$(CC) $(CFLAGS) -g server.c -o server_debug $(LDFLAGS)
+
 # nobuild executable
 nobuild:
 	$(CC) nobuild.c -o nobuild

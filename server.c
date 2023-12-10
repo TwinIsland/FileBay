@@ -13,8 +13,8 @@
 #include <fcntl.h>
 
 // comment in out in production environment
-// #define debug 1
-// #define test 1
+// #define DEBUG 1
+// #define TEST 1
 
 #define CONFIG_FILE "CONFIG"
 #define CONFIG_NUM_EXPECT 7
@@ -24,6 +24,16 @@
 
 #define DIR_BUFFER_SIZE 128
 #define STD_MSG_BUFFER_SIZE 128
+
+#ifdef DEBUG
+#define debug(msg, ...)                             \
+    do                                              \
+    {                                               \
+        printf("(DEBUG) " msg "\n", ##__VA_ARGS__); \
+    } while (0)
+#else
+#define debug(msg, ...)
+#endif
 
 static int thread_should_stop = 0;
 static pthread_t tid;
@@ -316,9 +326,7 @@ void *cleaner_worker()
 {
     while (!thread_should_stop)
     {
-#ifdef debug
-        printf("(DEBUG) cleaner worker wake up\n");
-#endif
+        debug("cleaner worker wake up");
         if (FileNodeList)
         {
             time_t current_time;
@@ -327,10 +335,9 @@ void *cleaner_worker()
 
             for (int i = 0; i < FileNode_off; ++i)
             {
-#ifdef debug
-                printf("(DEBUG) file_id %d file_name %s expire %ld current %ld is_del %d\n",
+                debug("file_id %d file_name %s expire %ld current %ld is_del %d",
                        FileNodeList[i].id, FileNodeList[i].file_name, FileNodeList[i].expire_time, current_time, FileNodeList[i].is_del);
-#endif
+
                 if (FileNodeList[i].is_del == 0 && FileNodeList[i].expire_time <= current_time)
                 {
                     snprintf(filepath, sizeof(filepath), "%s/%d", storage_dir, FileNodeList[i].id);
@@ -349,9 +356,7 @@ void *cleaner_worker()
             }
         }
 
-#ifdef debug
-        printf("(DEBUG) cleaner worker sleep\n");
-#endif
+        debug("cleaner worker sleep");
 
         // sleep untile another period
         sleep(worker_period_minute * 60);
@@ -367,7 +372,7 @@ void *cleaner_worker()
 void terminate_handler()
 {
     thread_should_stop = 1;
-    pthread_cancel(tid);
+    pthread_detach(tid);
     printf("cleaner thread end\n");
     MHD_stop_daemon(d);
     printf("server stoped\n");
@@ -673,9 +678,8 @@ upload_req_callback(void *coninfo_cls, enum MHD_ValueKind kind, const char *key,
     {
         con_info->upload_byte += size;
 
-#ifdef debug
-        printf("(DEBUG) upload: %ld\n", con_info->upload_byte);
-#endif
+        debug("upload: %ld", con_info->upload_byte);
+
         if (con_info->upload_byte > (size_t)file_max_byte)
         {
             con_info->is_err = 1;
@@ -898,8 +902,7 @@ void test_FileNodeOperations()
 
 int main(int argc, char *const *argv)
 {
-
-#ifdef debug
+#ifdef DEBUG
     printf("!!! DEBUG MODE: to switch to the production mode, comment out the line '#define debug 1'\n\n");
 #endif
 
@@ -921,7 +924,7 @@ int main(int argc, char *const *argv)
 
     // create storage_dir if not exist
     struct stat st = {0};
-    
+
     if (stat(storage_dir, &st) == -1)
     {
         if (mkdir(storage_dir, 0700) == -1)
@@ -938,7 +941,7 @@ int main(int argc, char *const *argv)
     // initialize old file node list
     deserialize_FileNodeList();
 
-#ifdef test
+#ifdef TEST
     printf("!!! TEST MODE: to switch to the production mode, comment out the line '#define test 1'\n\n");
     test_FileNodeOperations();
     return 0;
@@ -965,7 +968,7 @@ int main(int argc, char *const *argv)
         perror("Error creating thread\n");
         return EXIT_FAILURE;
     }
-
+    
     (void)getchar(); // Wait for user input to terminate the server
 
     terminate_handler(-1);
