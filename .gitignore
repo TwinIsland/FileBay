@@ -19,6 +19,8 @@ dump.bin
 nobuild
 nobuild.h
 nobuild.old
+test
+test.c
 
 # folder create in run time
 files/

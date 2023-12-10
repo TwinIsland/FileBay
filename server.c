@@ -18,10 +18,13 @@
 #define CONFIG_NUM_EXPECT 6
 
 #define FileNodePerMalloc 5
+#define MAXCLIENTS 2
+#define POSTBUFFERSIZE 512
 
 static int thread_should_stop = 0;
 static pthread_t tid;
 static struct MHD_Daemon *d;
+static unsigned int nr_of_uploading_clients = 0;
 
 // config parameter
 static int file_max_byte, file_expire, worker_period_minute, max_file_count;
@@ -29,14 +32,6 @@ static char storage_dir[128], dump_dist[128];
 
 // version parameter, use to check serialzation version conflict
 static unsigned char serialization_ver = 2;
-
-struct ConnectionInfo
-{
-    FILE *fp;
-    size_t total_size;
-    struct MHD_PostProcessor *post_processor;
-    int file_too_large_flag;
-};
 
 typedef struct FileNode
 {
@@ -47,6 +42,15 @@ typedef struct FileNode
     time_t expire_time;
     unsigned int pwd;
 } FileNode;
+
+typedef struct ConnectionInfo
+{
+    FILE *fp;
+    size_t total_size;
+    struct MHD_PostProcessor *post_processor;
+    int answercode;
+    FileNode node;
+} ConnectionInfo;
 
 static FileNode *FileNodeHead;
 static int FileNode_off = 0;
@@ -69,7 +73,7 @@ unsigned int generate_rand_6digit()
     return 100000 + rand() % 900000;
 }
 
-FileNode create_FileNode(char *file_name, size_t file_size)
+FileNode create_FileNode(const char *file_name, size_t file_size)
 {
     time_t cur_time;
     time(&cur_time);
@@ -150,7 +154,8 @@ int serialize_FileNodeList()
 
     for (int i = 0; i < FileNode_off; i++)
     {
-        if (FileNodeHead[i].is_del) {
+        if (FileNodeHead[i].is_del)
+        {
             // ignore if the FileNode marked as delete
             continue;
         }
@@ -292,8 +297,8 @@ void *cleaner_worker()
             for (int i = 0; i < FileNode_off; ++i)
             {
 #ifdef debug
-                printf("(DEBUG) file_id %d file_name %s expire %ld current %ld is_del %d\n", 
-                FileNodeHead[i].id, FileNodeHead[i].file_name, FileNodeHead[i].expire_time, current_time, FileNodeHead[i].is_del);
+                printf("(DEBUG) file_id %d file_name %s expire %ld current %ld is_del %d\n",
+                       FileNodeHead[i].id, FileNodeHead[i].file_name, FileNodeHead[i].expire_time, current_time, FileNodeHead[i].is_del);
 #endif
                 if (!FileNodeHead[i].is_del && FileNodeHead[i].expire_time <= current_time)
                 {
@@ -410,7 +415,7 @@ body_compress(void **buf,
 }
 
 static enum MHD_Result
-response_file(struct MHD_Connection *connection, char *file_path)
+response_file(struct MHD_Connection *connection, const char *file_path)
 {
     struct MHD_Response *response;
     enum MHD_Result ret;
@@ -508,118 +513,127 @@ response_json(struct MHD_Connection *connection, char *content)
     return ret;
 }
 
+/*
+ * Method to handle file uploading
+ * https://android.googlesource.com/platform/external/libmicrohttpd/+/master/doc/examples/largepost.c
+ *
+ */
 static enum MHD_Result
 upload_req_callback(void *coninfo_cls, enum MHD_ValueKind kind, const char *key,
                     const char *filename, const char *content_type,
                     const char *transfer_encoding, const char *data,
                     uint64_t off, size_t size)
 {
-    struct ConnectionInfo *con_info = coninfo_cls;
+    ConnectionInfo *con_info = coninfo_cls;
+    FILE *fp;
+    char local_file_dir[128];
+    FileNode new_file_node;
 
-    (void) kind;
-    (void) content_type;
-    (void) transfer_encoding;
-    (void) off;
+    (void)kind;
+    (void)content_type;
+    (void)transfer_encoding;
+    (void)off;
 
-    // printf("file type: %s\n", key);
-    // Only process file upload fields
+    con_info->answercode = MHD_HTTP_INTERNAL_SERVER_ERROR;
     if (0 != strcmp(key, "file"))
-    {
-        return MHD_YES;
-    }
-
+        return MHD_NO;
     if (!con_info->fp)
     {
-        char file_path[FILENAME_MAX];
-        snprintf(file_path, sizeof(file_path), "%s/%s", storage_dir, filename);
+        new_file_node = create_FileNode(filename, 0);
+        sprintf(local_file_dir, "%s/%d", storage_dir, new_file_node.id);
+        con_info->node = new_file_node;
 
-        con_info->fp = fopen(file_path, "ab");
-        if (!con_info->fp)
+        if (NULL != (fp = fopen(local_file_dir, "rb")))
         {
-            return MHD_NO; // Cannot open file
+            fclose(fp);
+            con_info->answercode = MHD_HTTP_FORBIDDEN;
+            return MHD_NO;
         }
+        con_info->fp = fopen(local_file_dir, "ab");
+        if (!con_info->fp)
+            return MHD_NO;
     }
-
     if (size > 0)
     {
-        if (con_info->total_size + size > (size_t)file_max_byte)
-        {
-            return MHD_NO; // Exceeds file size limit
-        }
-        fwrite(data, 1, size, con_info->fp);
-        con_info->total_size += size;
+        if (!fwrite(data, size, sizeof(char), con_info->fp))
+            return MHD_NO;
     }
-
+    con_info->answercode = MHD_HTTP_OK;
     return MHD_YES;
+}
+
+static void
+request_completed(void *cls, struct MHD_Connection *connection,
+                  void **con_cls, enum MHD_RequestTerminationCode toe)
+{
+    ConnectionInfo *con_info = *con_cls;
+
+    (void)cls;
+    (void)connection;
+    (void)toe;
+
+    if (NULL == con_info)
+        return;
+
+    if (NULL != con_info->post_processor)
+    {
+        MHD_destroy_post_processor(con_info->post_processor);
+        nr_of_uploading_clients--;
+    }
+    if (con_info->fp)
+        fclose(con_info->fp);
+    free(con_info);
+    *con_cls = NULL;
 }
 
 static enum MHD_Result
 upload_req_handler(struct MHD_Connection *connection, const char *upload_data, size_t *upload_data_size, void **con_cls)
 {
-    enum MHD_Result result;
-
-    // first time post, create ConnectionInfo
     if (NULL == *con_cls)
     {
-        struct ConnectionInfo *con_info = malloc(sizeof(struct ConnectionInfo));
+        ConnectionInfo *con_info;
+        if (nr_of_uploading_clients >= MAXCLIENTS)
+            return response_file(connection, "./pages/busy.html");
+
+        con_info = malloc(sizeof(ConnectionInfo));
+
         if (NULL == con_info)
             return MHD_NO;
 
         con_info->fp = NULL;
-        con_info->total_size = 0;
-        con_info->post_processor = MHD_create_post_processor(connection, 64 * 1024, &upload_req_callback, con_info);
-
+        con_info->post_processor =
+            MHD_create_post_processor(connection, POSTBUFFERSIZE,
+                                      upload_req_callback, (void *)con_info);
         if (NULL == con_info->post_processor)
         {
             free(con_info);
             return MHD_NO;
         }
+        nr_of_uploading_clients++;
+        con_info->answercode = MHD_HTTP_OK;
 
         *con_cls = (void *)con_info;
         return MHD_YES;
     }
 
-    // upload file
-    struct ConnectionInfo *con_info = *con_cls;
-    if (*upload_data_size)
+    ConnectionInfo *con_info = *con_cls;
+    if (0 != *upload_data_size)
     {
-        if (con_info->total_size + *upload_data_size > (size_t)file_max_byte)
-        {
-            printf("file too large\n");
-            con_info->file_too_large_flag = 1;
-            // Drain the remaining data
-            *upload_data_size = 0;
-            return MHD_YES;
-        }
-
-        MHD_post_process(con_info->post_processor, upload_data, *upload_data_size);
-        con_info->total_size += *upload_data_size;
+        MHD_post_process(con_info->post_processor, upload_data,
+                         *upload_data_size);
         *upload_data_size = 0;
         return MHD_YES;
     }
-    else // request complete, do some cleaning
+    else
     {
-        result = con_info->file_too_large_flag ? MHD_HTTP_CONTENT_TOO_LARGE : MHD_YES;
-
-        if (con_info != NULL)
+        if (NULL != con_info->fp)
         {
-            // Clean up resources
-            if (con_info->fp)
-                fclose(con_info->fp);
-
-            if (con_info->post_processor)
-                MHD_destroy_post_processor(con_info->post_processor);
-
-            free(con_info);
-            *con_cls = NULL;
+            fclose(con_info->fp);
+            con_info->fp = NULL;
         }
-        else
-        {
-            printf("but why\n");
-            return MHD_NO;
-        }
-
-        return result;
+        add_FileNode(con_info->node);
+        /* Now it is safe to open and inspect the file before calling send_page with a response */
+        return response_file(connection, "./pages/complete.html");
     }
 }
 
@@ -769,7 +783,8 @@ int main(int argc, char *const *argv)
     d = MHD_start_daemon(MHD_USE_AUTO | MHD_USE_INTERNAL_POLLING_THREAD | MHD_USE_ERROR_LOG,
                          atoi(argv[1]), NULL, NULL,
                          &ahc_echo, NULL,
-                         MHD_OPTION_END);
+                         MHD_OPTION_NOTIFY_COMPLETED, request_completed,
+                         NULL, MHD_OPTION_END);
 
     if (NULL == d)
     {

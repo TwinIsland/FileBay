@@ -21,6 +21,11 @@ $(EXEC): $(OBJ)
 nobuild:
 	$(CC) nobuild.c -o nobuild
 
+# install dependency
+install:
+	chmod +x INSTALL
+	./INSTALL
+
 # Clean target
 clean:
 	rm -f $(OBJ) $(EXEC)

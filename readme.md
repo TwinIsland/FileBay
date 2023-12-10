@@ -18,8 +18,7 @@ Please ensure these are installed on your system for the software to function co
 
 ```bash
 # install the dependency
-chmod +x INSTALL
-./INSTALL
+make install
 ```
 
 ## Run 🐎

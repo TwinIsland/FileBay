@@ -1,7 +1,7 @@
 #define NOBUILD_IMPLEMENTATION
 #include "./nobuild.h"
 
-#define CFLAGS "-Wall", "-Wextra", "-std=c99", "-pedantic", "-O3"
+#define CFLAGS "-Wall", "-Wextra", "-std=c99", "-pedantic", "-O3", "-march=native", "-flto"
 #define LDFLAGS "-lmicrohttpd", "-lz"
 
 void build_server()
