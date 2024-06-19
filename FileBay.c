@@ -316,9 +316,9 @@ int deserialize_FileNodeList()
            fread(&node.expire_time, sizeof(time_t), 1, file) == 1 &&
            fread(&node.pwd, sizeof(unsigned int), 1, file) == 1)
     {
-        fread(&name_length, sizeof(size_t), 1, file);
+        ret = fread(&name_length, sizeof(size_t), 1, file);
         node.file_name = malloc(name_length * sizeof(char));
-        fread(node.file_name, sizeof(char), name_length, file);
+        ret = fread(node.file_name, sizeof(char), name_length, file);
 
         add_FileNode(node);
     }
