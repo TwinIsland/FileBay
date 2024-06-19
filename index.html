@@ -1,25 +1,43 @@
 <!DOCTYPE html>
-<html>
-    <head>
-        <title>FileBay</title>
-        <meta charset="UTF-8" />
-        <link rel="stylesheet" href="/css/styles.css" />
-        <link rel="icon" href="https://cirno.me/usr/themes/VOID/assets/favicon.png">
-    </head>
-
-    <body>
-        <div id="root">
-            <div id="tab-container">
-                <a href="/" class="tab" onclick="route()">Get 🗂️</a>
-                <a href="/upload" class="tab" onclick="route()">Upload 🗂️</a>
-                <a href="/about" class="tab" onclick="route()">🎇</a>
-
-            </div>
-            <div id="main-page"></div>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <div id="status-container">
+        <div>
+            <p id="file_max_size">Maximum size: 10.00 MB</p>
+            <p id="file_expire_in">Expire in: 1.00 Hours</p>
         </div>
-        
-        <script src="/js/index.js"></script>
-        <script src="/js/uploadReload.js"></script>
-        <script src="/js/router.js"></script>
-    </body>
+        <div id="status">
+            <div id="status-dot" style="background-color: red;"></div>
+            <span id="status-text">Service is busy</span>
+        </div>
+    </div>
+    <style>
+        #status {
+  display: flex;
+  align-items: center;
+}
+
+#status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+#status-container {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  color: gray;
+  margin-top: 50px;
+  line-height: 1.5;
+}
+
+    </style>
+</body>
 </html>

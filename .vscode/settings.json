@@ -1,11 +1,6 @@
 {
     "files.associations": {
         "microhttpd.h": "c",
-        "stdlib.h": "c",
-        "signal.h": "c",
-        "errno.h": "c",
-        "hashmap.h": "c",
-        "string.h": "c",
-        "type_traits": "c"
+        "errno.h": "c"
     }
 }

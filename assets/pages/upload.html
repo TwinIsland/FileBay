@@ -15,13 +15,19 @@
     <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data">
       <input type="file" name="file" id="fileInput" class="tab" required>
       <br>
-      <input type="submit" value="Upload" class="tab" style="margin-top: 15px;" />
+      <input type="submit" value="Upload" class="tab" id="submit_btn" style="margin-top: 15px;" />
     </form>
     <p>or, drop the file here</p>
 
-    <div style="line-height: 7px;margin-top: 50px;color: gray;">
-      <p id="file_max_size">Maximum size: </p>
-      <p id="file_expire_in">Expire in: </p>
-    </div>
-  </section>
+    <div id="status-container">
+      <div>
+          <p id="file_max_size">Maximum size: </p>
+          <p id="file_expire_in">Expire in: </p>
+      </div>
+      <div id="status">
+          <div id="status-dot" style="background-color: gray;"></div>
+          <span id="status-text">Connection...</span>
+      </div>
+  </div>
+</section>
 </div>

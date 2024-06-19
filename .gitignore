@@ -23,6 +23,7 @@ nobuild.h
 nobuild.old
 test
 test.c
+Filebay
 
 # folder create in run time
 files/

@@ -1,7 +1,6 @@
 file_max_byte:10485760
+file_max_count:10
 file_expire:60
 worker_period:30
 storage_dir:./files
 dump_dist:./dump.bin
-max_file_count:10
-max_client:2
