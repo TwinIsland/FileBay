@@ -19,8 +19,7 @@ function backspace() {
 }
 
 function enter() {
-    var display = document.getElementById('number-display');
-    console.log("value: " + display.value);
+    var display = document.getElementById('number-display');    
 
     fetch('/api/download?pass=' + display.value)
         .then(response => {
@@ -32,11 +31,11 @@ function enter() {
                 if (disposition && disposition.indexOf('attachment') !== -1) {
                     const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
                     const matches = filenameRegex.exec(disposition);
-                    if (matches != null && matches[1]) { 
+                    if (matches != null && matches[1]) {
                         filename = matches[1].replace(/['"]/g, '');
                     }
                 }
-    
+
                 return response.blob().then(blob => ({ blob, filename }));
             } else {
                 throw new Error('Network response was not ok');
@@ -109,12 +108,21 @@ function showUploadSuccess(code) {
         <h1 style="color:green">Congratulation!</h1>
         <p>Your file has been upload successfully!</p>
         <p>Use the code <span style="font-size: 20px;font-weight: bolder;">${code}</span> to pick it up</p>
-        <img src="suika.webp">
+        <div id="dlink"></div>
         <hr>
         <p>Power By <a href="https://cirno.me">Cirno.me</a></p>
         `;
 
         contentContainer.innerHTML += htmlContent;
+
+        new QRCode(document.getElementById("dlink"), {
+            text: window.location.host + "/api/download?code=" + code,
+            width: 180,
+            height: 180,
+            colorDark: "#B98A82",
+            colorLight : "#f7f7f7",
+            correctLevel: QRCode.CorrectLevel.H
+        });
     }
 }
 

@@ -125,3 +125,8 @@ html {
   margin: 0; 
   padding: 2px 0; 
 }
+
+#dlink img {
+  display: inline-table !important;
+  margin: 15px;
+}

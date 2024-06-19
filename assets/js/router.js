@@ -16,6 +16,8 @@ const routes = {
     "/upload": "/pages/upload.html",
 };
 
+
+
 const handleLocation = async () => {
     // cleanup the previous page renderer
     if (window.currentCleanup) {
@@ -25,6 +27,7 @@ const handleLocation = async () => {
     }
 
     const path = window.location.pathname;
+
     const route = routes[path] || routes[404];
     const html = await fetch(route).then((data) => data.text());
     document.getElementById("main-page").innerHTML = html;
@@ -34,7 +37,7 @@ const handleLocation = async () => {
         script.src = "/js/upload.js";
         script.className = 'route-script';
         document.body.appendChild(script);
-    } 
+    }
 };
 
 window.onpopstate = handleLocation;
