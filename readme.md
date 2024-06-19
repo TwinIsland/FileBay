@@ -10,7 +10,7 @@ Update file in a quick way
 
 ## Run 🦉
 
-**(Optional)** change the `CONFIG` to meet your demand:
+0. **(Optional)** change the `CONFIG` to meet your demand:
 
 ```bash
 # DO NOT INCLUDE COMMENT!
@@ -23,10 +23,19 @@ storage_dir:./files     # Directory for storing files
 dump_dist:./dump.bin    # Location of the dump file
 ```
 
-Then, compile and run:
+1. Download the last release from: https://github.com/TwinIsland/FileBay/releases
+
+2. unzip folder and start server:
+
+```
+./FileBay <PORT>
+```
+
+## Compile 👾
+
 
 ```bash
-gcc *.c -Iinclude -o Filebay
+gcc *.c -Iinclude -o Filebay -O3
 ./Filebay <PORT>
 ```
 
