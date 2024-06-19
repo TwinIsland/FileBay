@@ -10,7 +10,11 @@ Update file in a quick way
 
 ## Run 🦉
 
-0. **(Optional)** change the `CONFIG` to meet your demand:
+### 👾run via executable👾
+
+1. Download the last release from: https://github.com/TwinIsland/FileBay/releases
+
+2. unzip folder, you may want to change the config to meet your demand
 
 ```bash
 # DO NOT INCLUDE COMMENT!
@@ -23,15 +27,13 @@ storage_dir:./files     # Directory for storing files
 dump_dist:./dump.bin    # Location of the dump file
 ```
 
-1. Download the last release from: https://github.com/TwinIsland/FileBay/releases
-
-2. unzip folder and start server:
+3. start the server via:
 
 ```
 ./FileBay <PORT>
 ```
 
-## Compile 👾
+### 👾compile and run👾
 
 
 ```bash
