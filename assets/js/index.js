@@ -109,7 +109,7 @@ function showUploadSuccess(code) {
         <h1 style="color:green">Congratulation!</h1>
         <p>Your file has been upload successfully!</p>
         <p>Use the code <span style="font-size: 20px;font-weight: bolder;">${code}</span> to pick it up</p>
-        <img src="https://cirno.me/usr/themes/VOID/assets/suica_chara.gif">
+        <img src="suika.webp">
         <hr>
         <p>Power By <a href="https://cirno.me">Cirno.me</a></p>
         `;
@@ -129,7 +129,7 @@ function showUploadFailed(msg) {
         <hr>
         <h1 style="color:red">Errorrr!</h1>
         <p>Failed due to: <span style="font-size: 20px;font-weight: bolder;">${msg}</span></p>
-        <img src="https://cirno.me/usr/themes/VOID/assets/suica_chara.gif">
+        <img src="suika.webp">
         <hr>
         <p>Power By <a href="https://cirno.me">Cirno.me</a></p>
         `;

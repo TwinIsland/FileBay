@@ -61,6 +61,8 @@ document.getElementById('uploadForm').addEventListener('submit', function (e) {
 
 var statusText = document.getElementById('status-text');
 var statusDot = document.getElementById('status-dot');
+var fileInputField = document.getElementById("fileInput");
+var fileSubmitField = document.getElementById("submit_btn");
 var ws = new WebSocket('ws://localhost:1234/api/status');
 
 ws.onopen = () => {
@@ -69,21 +71,21 @@ ws.onopen = () => {
 
 ws.onmessage = (event) => {
     if (parseInt(event.data) == 1) {
-        document.getElementById("fileInput").disabled = true;
-        document.getElementById("submit_btn").disabled = true;
+        fileInputField.disabled = true;
+        fileSubmitField.disabled = true;
         statusText.innerText = 'Service Busy';
         statusDot.style.backgroundColor = 'red';
     } else {
-        document.getElementById("fileInput").disabled = false;
-        document.getElementById("submit_btn").disabled = false;
+        fileInputField.disabled = false;
+        fileSubmitField.disabled = false;
         statusText.innerText = 'Service Available';
         statusDot.style.backgroundColor = 'green';
     }
 };
 
 ws.onerror = () => {
-    document.getElementById("fileInput").disabled = true;
-    document.getElementById("submit_btn").disabled = true;
+    fileInputField.disabled = true;
+    fileSubmitField.disabled = true;
     statusText.innerText = 'Server Error';
     statusDot.style.backgroundColor = 'gray';
 };
