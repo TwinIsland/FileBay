@@ -5,6 +5,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <signal.h>
+#include <dirent.h>
 
 #include "hashmap.h"
 #include "mongoose.h"
@@ -14,7 +15,7 @@
 
 #define ASCII_LOGO_PATH "assets/ascii_logo"
 
-#define SERIALIZE_VER 3 // version parameter, use to check serialzation version conflict
+#define SERIALIZE_VER 4 // version parameter, use to check serialzation version conflict
 
 #define FILENODEPERMALLOC 5
 
@@ -263,14 +264,16 @@ int serialize_FileNodeList()
 
     for (int i = 0; i < FileNode_off; i++)
     {
+
+        debug("serialize filename: %s\n", FileNodeList[i].file_name);
         if (FileNodeList[i].is_del)
         {
             // ignore if the FileNode marked as delete
             continue;
         }
+
         // Serialize id, file_size, expire_time as before
         fwrite(&FileNodeList[i].id, sizeof(int), 1, file);
-        fwrite(&FileNodeList[i].is_del, sizeof(int), 1, file);
         fwrite(&FileNodeList[i].file_size, sizeof(size_t), 1, file);
         fwrite(&FileNodeList[i].expire_time, sizeof(time_t), 1, file);
         fwrite(&FileNodeList[i].pwd, sizeof(unsigned int), 1, file);
@@ -296,7 +299,6 @@ int deserialize_FileNodeList()
     if (!file)
         return 0;
 
-    FileNode node;
     size_t name_length;
     int ret;
 
@@ -310,8 +312,10 @@ int deserialize_FileNodeList()
         return 1;
     }
 
-    while (fread(&node.id, sizeof(int), 1, file) == 1 &&
-           fread(&node.is_del, sizeof(int), 1, file) == 1 &&
+    FileNode node;
+    int old_file_id;
+
+    while (fread(&old_file_id, sizeof(int), 1, file) &&
            fread(&node.file_size, sizeof(size_t), 1, file) == 1 &&
            fread(&node.expire_time, sizeof(time_t), 1, file) == 1 &&
            fread(&node.pwd, sizeof(unsigned int), 1, file) == 1)
@@ -320,8 +324,43 @@ int deserialize_FileNodeList()
         node.file_name = malloc(name_length * sizeof(char));
         ret = fread(node.file_name, sizeof(char), name_length, file);
 
+        node.id = FileNode_off;
+        node.is_del = 0;
+
+        // reassign file id
+        char old_filepath[64], new_filepath[64];
+        sprintf(old_filepath, "%s/%d", storage_dir, old_file_id);
+        sprintf(new_filepath, "%s/_%d", storage_dir, node.id);
+
+        rename(old_filepath, new_filepath);
+
+        debug("deserialize filename: %s\n", node.file_name);
         add_FileNode(node);
     }
+
+    DIR *dir;
+    struct dirent *entry;
+
+    if ((dir = opendir(storage_dir)) == NULL)
+    {
+        perror("opendir");
+        return -1;
+    }
+
+    while ((entry = readdir(dir)) != NULL)
+    {
+        if (entry->d_name[0] == '_')
+        {
+            char old_filepath[325], new_filepath[325];
+
+            sprintf(old_filepath,"%s/%s", storage_dir, entry->d_name);
+            sprintf(new_filepath, "%s/%s", storage_dir, entry->d_name+1);
+
+            rename(old_filepath, new_filepath);
+        }
+    }
+
+    closedir(dir);
 
     fclose(file);
     printf("file node list deserialized from: %s with size %d\n", dump_dist, FileNode_off);
@@ -549,7 +588,7 @@ ROUTER(download)
         printf("request download file: %s\n", filenode->file_name);
         sprintf(extra_header, "Content-Disposition: attachment; filename=%s\n", filenode->file_name);
         opts.extra_headers = extra_header;
-        
+
         char local_path[64];
         sprintf(local_path, "%s/%d", storage_dir, filenode->id);
 
